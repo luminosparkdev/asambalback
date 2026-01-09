@@ -1,6 +1,7 @@
 const { db } = require("../config/firebase");
 const crypto = require("crypto");
 const { sendActivationEmail } = require("../utils/mailer");
+const { logAudit } = require("../utils/auditlogger");
 
 // GENERAMOS TOKEN
 const generateActivationToken = () =>
@@ -132,6 +133,13 @@ const toggleClubStatus = async (req, res) => {
       updatedAt: new Date(),
     });
 
+    await logAudit({
+      req,
+      action: snap.data().isActive ? "DEACTIVATE_CLUB" : "ACTIVATE_CLUB",
+      entity: "clubes",
+      entityId: id,
+    });
+
     res.json({
       success: true,
       isActive: !currentStatus,
@@ -193,6 +201,14 @@ const updateClub = async (req, res) => {
 
     const updated = await clubRef.get();
 
+    await logAudit({
+      req,
+      action: "UPDATE_CLUB",
+      entity: "clubes",
+      entityId: id,
+      payload: req.body,
+    });
+
     res.json({
       success: true,
       club: {
@@ -206,5 +222,6 @@ const updateClub = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 module.exports = { createClubWithAdmin, getClubs, toggleClubStatus, getClubById, updateClub };
