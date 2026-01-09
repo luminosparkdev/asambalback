@@ -17,9 +17,9 @@ const login = async (req, res) => {
     const isMatch = bcrypt.compareSync(password, userData.password);
     if (!isMatch) return res.status(400).json({ message: "Contraseña incorrecta" });
 
-    const token = generateToken({ email: userData.email, role: userData.role });
+    const token = generateToken({ email: userData.email, role: userData.role, clubId: userData.clubId || null });
 
-    res.json({ user: { email: userData.email, role: userData.role }, token });
+    res.json({ user: { email: userData.email, role: userData.role, clubId: userData.clubId || null }, token });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
