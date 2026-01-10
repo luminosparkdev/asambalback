@@ -31,10 +31,8 @@ const login = async (req, res) => {
 
 // ACTIVACION DE CUENTA
 const activateAccount = async (req, res) => {
-  console.log("👉 REQ BODY:", req.body); // 👈 ACÁ
-
   try {
-    const { email, password, token } = req.body;
+    const { email, password, token, } = req.body;
 
     const userSnap = await db
       .collection("usuarios")
@@ -64,7 +62,7 @@ const activateAccount = async (req, res) => {
       updatedAt: new Date(),
     });
 
-    res.json({ success: true, newStatus });
+    res.json({ success: true, newStatus, role: userData.role });
   } catch (err) {
     console.error("❌ ERROR activateAccount:", err);
     res.status(500).json({ message: err.message });

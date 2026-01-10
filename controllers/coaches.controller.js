@@ -31,10 +31,10 @@ const createProfesor = async (req, res) => {
 
     const activationToken = generateActivationToken();
 
-    await db.runTransaction(async (tx) =>{
-        const userRef = db.collection("usuarios").doc();
-        const coachRef = db.collection("profesores").doc();
+    const userRef = db.collection("usuarios").doc();
+    const coachRef = db.collection("profesores").doc();
 
+    await db.runTransaction(async (tx) =>{
         //USUARIO
         tx.set(userRef, {
             email,
