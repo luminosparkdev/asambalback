@@ -14,12 +14,12 @@ const createClubWithAdmin = async (req, res) => {
       return res.status(403).json({ message: "Acceso denegado" });
     }
 
-    const { clubName, city, adminEmail, manager, venue, telephone } = req.body;
+    const { clubName, city, adminEmail } = req.body;
 
     console.log(req.body)
 
 
-    if (!clubName || !adminEmail || !manager || !venue || !telephone || !city) {
+    if (!clubName || !adminEmail || !city) {
       return res.status(400).json({ message: "Faltan datos" });
     }
 
@@ -39,26 +39,23 @@ const createClubWithAdmin = async (req, res) => {
     // CREACIÓN CLUB Y USUARIO ADMIN EN UNA TRANSACCIÓN
     await db.runTransaction(async (tx) => {
       const clubRef = db.collection("clubes").doc();
+      const userRef = db.collection("usuarios").doc();
 
       tx.set(clubRef, {
         nombre: clubName,
         ciudad: city || "",
-        isActive: true,
-        responsable: manager,
-        sede: venue,
-        telefono: telephone,
+        email: adminEmail,
+        status: "incompleto",
+        createdBy: req.user.email,
         createdAt: new Date(),
         updatedAt: new Date(),
       });
-
-      const userRef = db.collection("usuarios").doc();
 
       tx.set(userRef, {
         email: adminEmail,
         role: "admin_club",
         clubId: clubRef.id,
-
-        active: false,
+        status: "incompleto",
         activationToken,
 
         createdBy: req.user.email,

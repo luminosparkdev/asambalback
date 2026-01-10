@@ -12,8 +12,12 @@ const login = async (req, res) => {
 
     const userData = userSnap.docs[0].data();
 
-    if (!userData.active) return res.status(400).json({ message: "Usuario no activado" });
-
+    if (userData.status !== "ACTIVO") {
+      return res.status(400).json({
+        message: "Usuario no activo",
+        status: userData.status,
+      });
+    }
     const isMatch = bcrypt.compareSync(password, userData.password);
     if (!isMatch) return res.status(400).json({ message: "Contraseña incorrecta" });
 
@@ -42,9 +46,18 @@ const activateAccount = async (req, res) => {
 
     const hashedPassword = bcrypt.hashSync(password, 10);
 
-    await userDoc.ref.update({ password: hashedPassword, active: true, activationToken: null });
+    const newStatus =
+      userData.role === "admin_asambal" ? "ACTIVO" : "PENDIENTE";
 
-    res.json({ success: true });
+    await userDoc.ref.update({ 
+      password: hashedPassword,
+      role: userData.role,
+      userId: userData.userId,
+      status: newStatus, 
+      activationToken: null,
+      updatedAt: new Date() });
+
+    res.json({ success: true, newStatus });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

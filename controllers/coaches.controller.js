@@ -1,15 +1,25 @@
 const { db } = require("../config/firebase");
+const crypto = require("crypto");
+const { sendActivationEmail } = require("../utils/mailer");
 
-// CREAR PROFESOR
+// GENERAMOS TOKEN
+const generateActivationToken = () =>
+  crypto.randomBytes(20).toString("hex");
+
+// CREAR PROFESOR y USUARIO PROFESOR
 const createProfesor = async (req, res) => {
   try {
-    const { nombre, apellido, dni, email, telefono, domicilio, categoria, enea } = req.body;
+    const { nombre, apellido, email, categoria } = req.body;
 
-    if (!nombre || !apellido || !dni || !email || !telefono || !domicilio || !categoria || !enea) {
+    if (!nombre || !apellido || !email || !categoria) {
       return res.status(400).json({ message: "Faltan datos" });
     }
 
-    // chequeo email duplicado
+    if (!req.user.clubId) {
+      return res.status(400).json({ message: "Usuario sin club asignado" });
+    }
+
+    // CHEQUEAMOS USUARIO EXISTENTE
     const existing = await db
       .collection("profesores")
       .where("email", "==", email)
@@ -19,26 +29,41 @@ const createProfesor = async (req, res) => {
       return res.status(400).json({ message: "El profesor ya existe" });
     }
 
-    const profesorRef = db.collection("profesores").doc();
+    const activationToken = generateActivationToken();
 
-    await profesorRef.set({
-      nombre,
-      apellido,
-      dni,
-      email,
-      telefono,
-      domicilio,
-      categoria,
-      enea,
-      clubId: req.user.clubId,
-      isActive: true,
+    await db.runTransaction(async (tx) =>{
+        const userRef = db.collection("usuarios").doc();
+        const coachRef = db.collection("profesores").doc();
 
-      createdBy: req.user.email,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+        //USUARIO
+        tx.set(userRef, {
+            email,
+            role: "profesor",
+            clubId: req.user.clubId,
+            status: "INCOMPLETO",
+            activationToken,
+            createdBy: req.user.email,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        });
+
+        //PERFIL PROFESOR
+        tx.set(coachRef, {
+            nombre,
+            apellido,
+            email,
+            categoria,
+            clubId: req.user.clubId,
+            userId: userRef.id,
+            status: "INCOMPLETO",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        });
     });
 
-    res.json({ success: true, id: profesorRef.id });
+    await sendActivationEmail(email, activationToken, email);
+
+    res.json({ success: true, id: userRef.id });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
