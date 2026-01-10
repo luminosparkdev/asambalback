@@ -32,7 +32,7 @@ const getPendingUsers = async (req, res) => {
 
 const validateUser = async (req, res) => {
   try {
-    const { userId, action } = req.body; // action: "APPROVE" | "REJECT"
+    const { userId, action } = req.body;
 
     const userRef = db.collection("usuarios").doc(userId);
     const userSnap = await userRef.get();
@@ -53,5 +53,5 @@ const validateUser = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-    
+
 module.exports = { getPendingUsers, validateUser };

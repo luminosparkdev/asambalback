@@ -10,7 +10,24 @@ const {
   getProfesorById,
   updateProfesor,
   toggleProfesorStatus,
+  validateCoach,
+  completeProfesorProfile,
+  getPendingCoaches,    
 } = require("../controllers/coaches.controller");
+
+router.get(
+    "/pending-coaches", 
+    authMiddleware, 
+    requireRole("admin_club"), 
+    getPendingCoaches
+);
+
+router.patch(
+  "/:coachId/validate-coach",
+  authMiddleware,
+  requireRole("admin_club"),
+  validateCoach
+);
 
 router.post(
   "/",
@@ -43,8 +60,19 @@ router.put(
 router.patch(
   "/:id/toggle",
   authMiddleware,
-  requireRole("admin_club"),
+  requireRole("profesor"),
   toggleProfesorStatus
 );
+
+router.post(
+    "/complete-profile", 
+    authMiddleware,
+    requireRole("admin_club"),
+    completeProfesorProfile
+);
+
+
+
+
 
 module.exports = router;

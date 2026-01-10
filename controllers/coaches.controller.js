@@ -164,7 +164,7 @@ const toggleProfesorStatus = async (req, res) => {
     const newStatus = !snap.data().isActive;
 
     await ref.update({
-      isActive: newStatus,
+      status: newStatus,
       updatedAt: new Date(),
     });
 
@@ -174,10 +174,118 @@ const toggleProfesorStatus = async (req, res) => {
   }
 };
 
+const completeProfesorProfile = async (req, res) => {
+  try {
+    const { coachId } = req.params;
+    const {
+      telefono,
+      domicilio,
+      enea,
+    } = req.body;
+
+    const coachRef = db.collection("profesores").doc(coachId);
+    const coachSnap = await coachRef.get();
+
+    if (!coachSnap.exists) {
+      return res.status(404).json({ message: "Profesor no encontrado" });
+    }
+
+    if (coachSnap.data().clubId !== req.user.clubId) {
+      return res.status(403).json({ message: "Acceso denegado" });
+    }
+
+    const coachData = coachSnap.data();
+
+    await db.runTransaction(async (tx) => {
+      tx.update(coachRef, {
+        telefono,
+        domicilio,
+        enea,
+        status: "PENDIENTE_VALIDACION",
+        updatedAt: new Date(),
+      });
+
+      const userSnap = await db
+        .collection("usuarios")
+        .doc(coachData.userId)
+        .get();
+
+      if (!userSnap.empty) {
+        tx.update(userSnap.ref, {
+          status: "PENDIENTE_VALIDACION",
+          updatedAt: new Date(),
+        });
+      }
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const getPendingCoaches = async (req, res) => {
+  try {
+    const snap = await db
+      .collection("profesores")
+      .where("clubId", "==", req.user.clubId)
+      .where("status", "==", "PENDIENTE_VALIDACION")
+      .get();
+
+    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const validateCoach = async (req, res) => {
+  try {
+    const { coachId, action } = req.body;
+
+    if (!["APPROVE", "REJECT"].includes(action)) {
+      return res.status(400).json({ message: "Acción inválida" });
+    }
+
+    const coachRef = db.collection("profesores").doc(coachId);
+    const coachSnap = await coachRef.get();
+
+    if (!coachSnap.exists) {
+      return res.status(404).json({ message: "Profesor no encontrado" });
+    }
+
+    const coachData = coachSnap.data();
+
+    const newStatus = action === "APPROVE" ? "ACTIVO" : "RECHAZADO";
+
+    await db.runTransaction(async (tx) => {
+      tx.update(coachRef, {
+        status: newStatus,
+        updatedAt: new Date(),
+      });
+
+      const userRef = db.collection("usuarios").doc(coachData.userId);
+
+      tx.update(userRef, {
+        status: newStatus,
+        updatedAt: new Date(),
+      });
+    });
+
+    res.json({ success: true, status: newStatus });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
 module.exports = {
   createProfesor,
   getProfesores,
   getProfesorById,
   updateProfesor,
   toggleProfesorStatus,
+  completeProfesorProfile,
+  getPendingCoaches,
+  validateCoach,
 };
