@@ -31,11 +31,19 @@ const login = async (req, res) => {
 
 // ACTIVACION DE CUENTA
 const activateAccount = async (req, res) => {
+  console.log("👉 REQ BODY:", req.body); // 👈 ACÁ
+
   try {
     const { email, password, token } = req.body;
 
-    const userSnap = await db.collection("usuarios").where("email", "==", email).get();
-    if (userSnap.empty) return res.status(400).json({ message: "Usuario no encontrado" });
+    const userSnap = await db
+      .collection("usuarios")
+      .where("email", "==", email)
+      .get();
+
+    if (userSnap.empty) {
+      return res.status(400).json({ message: "Usuario no encontrado" });
+    }
 
     const userDoc = userSnap.docs[0];
     const userData = userDoc.data();
@@ -49,18 +57,20 @@ const activateAccount = async (req, res) => {
     const newStatus =
       userData.role === "admin_asambal" ? "ACTIVO" : "PENDIENTE";
 
-    await userDoc.ref.update({ 
+    await userDoc.ref.update({
       password: hashedPassword,
-      role: userData.role,
-      userId: userData.userId,
-      status: newStatus, 
+      status: newStatus,
       activationToken: null,
-      updatedAt: new Date() });
+      updatedAt: new Date(),
+    });
 
     res.json({ success: true, newStatus });
   } catch (err) {
+    console.error("❌ ERROR activateAccount:", err);
     res.status(500).json({ message: err.message });
   }
 };
+
+
 
 module.exports = { login, activateAccount };
