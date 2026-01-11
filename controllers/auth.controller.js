@@ -62,7 +62,13 @@ const activateAccount = async (req, res) => {
       updatedAt: new Date(),
     });
 
-    res.json({ success: true, newStatus, role: userData.role });
+    const tokenJwt = generateToken({
+      email: userData.email,
+      role: userData.role,
+      clubId: userData.clubId || null,
+    });
+
+    res.json({ success: true, newStatus, role: userData.role, clubId: userData.clubId || null , token: tokenJwt});
   } catch (err) {
     console.error("❌ ERROR activateAccount:", err);
     res.status(500).json({ message: err.message });

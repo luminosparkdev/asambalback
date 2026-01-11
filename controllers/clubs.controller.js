@@ -220,5 +220,52 @@ const updateClub = async (req, res) => {
   }
 };
 
+const completeClubProfile = async (req, res) => {
+  try {
+    const { clubId } = req.params;
+    const { responsable, sede, telefono, canchas, canchasAlternativas } = req.body;
 
-module.exports = { createClubWithAdmin, getClubs, toggleClubStatus, getClubById, updateClub };
+    if (clubId !== req.user.clubId) {
+      return res.status(403).json({ message: "Acceso denegado" });
+    }
+
+    await db.runTransaction(async (tx) => {
+      const clubRef = db.collection("clubes").doc(clubId);
+      const clubSnap = await tx.get(clubRef);
+
+      if (!clubSnap.exists) {
+        throw new Error("Club no encontrado");
+      }
+
+      tx.update(clubRef, {
+        responsable,
+        sede,
+        telefono,
+        canchas,
+        canchasAlternativas,
+        status: "PENDIENTE",
+        updatedAt: new Date(),
+      });
+
+      const userSnap = await db
+        .collection("usuarios")
+        .where("clubId", "==", clubId)
+        .where("role", "==", "admin_club")
+        .limit(1)
+        .get();
+
+      if (!userSnap.empty) {
+        tx.update(userSnap.docs[0].ref, {
+          status: "PENDIENTE",
+          updatedAt: new Date(),
+        });
+      }
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+module.exports = { createClubWithAdmin, getClubs, toggleClubStatus, getClubById, updateClub, completeClubProfile };
