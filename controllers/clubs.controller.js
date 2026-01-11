@@ -45,7 +45,7 @@ const createClubWithAdmin = async (req, res) => {
         nombre: clubName,
         ciudad: city || "",
         email: adminEmail,
-        status: "incompleto",
+        status: "INCOMPLETO",
         createdBy: req.user.email,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -55,7 +55,7 @@ const createClubWithAdmin = async (req, res) => {
         email: adminEmail,
         role: "admin_club",
         clubId: clubRef.id,
-        status: "incompleto",
+        status: "INCOMPLETO",
         activationToken,
 
         createdBy: req.user.email,
