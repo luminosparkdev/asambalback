@@ -115,31 +115,59 @@ const getClubs = async (req, res) => {
 const toggleClubStatus = async (req, res) => {
   try {
     const { id } = req.params;
-
     const clubRef = db.collection("clubes").doc(id);
-    const snap = await clubRef.get();
 
-    if (!snap.exists) {
-      return res.status(404).json({ message: "Club no encontrado" });
-    }
+    let newStatus = null;
 
-    const currentStatus = snap.data().isActive;
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(clubRef);
 
-    await clubRef.update({
-      isActive: !currentStatus,
-      updatedAt: new Date(),
+      if (!snap.exists) {
+        throw new Error("Club no encontrado");
+      }
+
+      const currentStatus = snap.data().status;
+
+      if (!["ACTIVO", "INACTIVO"].includes(currentStatus)) {
+        throw new Error(`No se puede cambiar el estado del club desde ${currentStatus}`);
+      }
+
+      newStatus = currentStatus === "ACTIVO" ? "INACTIVO" : "ACTIVO";
+
+      tx.update(clubRef, {
+        status: newStatus,
+        updatedAt: new Date(),
+      });
+
+      if (newStatus === "INACTIVO") {
+        const userSnap = await db
+          .collection("usuarios")
+          .where("clubId", "==", id)
+          .where("status", "==", "ACTIVO")
+          .get();
+
+        userSnap.forEach(doc => {
+          tx.update(doc.ref, {
+            status: "INACTIVO",
+            updatedAt: new Date(),
+          });
+        });
+      }
     });
 
     await logAudit({
       req,
-      action: snap.data().isActive ? "DEACTIVATE_CLUB" : "ACTIVATE_CLUB",
+      action:
+        newStatus === "INACTIVO"
+          ? "DEACTIVATE_CLUB_AND_USERS"
+          : "ACTIVATE_CLUB",
       entity: "clubes",
       entityId: id,
     });
 
     res.json({
       success: true,
-      isActive: !currentStatus,
+      status: newStatus,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
