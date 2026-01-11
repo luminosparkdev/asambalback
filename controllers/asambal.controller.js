@@ -41,12 +41,43 @@ const validateUser = async (req, res) => {
       return res.status(404).json({ message: "Usuario no encontrado" });
     }
 
+    const userData = userSnap.data();
+    
+    if (!userData.clubId) {
+      return res.status(400).json({ message: "El usuario no tiene club asociado" });
+    }
+
+    const clubRef = db.collection("clubes").doc(userData.clubId);
+    const clubSnap = await clubRef.get();
+
+    if (!clubSnap.exists) {
+      return res.status(404).json({ message: "Club no encontrado" });
+    }
+
     const newStatus = action === "APPROVE" ? "ACTIVO" : "RECHAZADO";
 
-    await userRef.update({
-      status: newStatus,
-      updatedAt: new Date(),
+    await db.runTransaction(async (tx) => {
+      tx.update(userRef, { 
+        status: newStatus,
+        updatedAt: new Date(),
+      });
+
+      if (action === "APPROVE") {
+        tx.update(clubRef, { 
+          status: newStatus,
+          updatedAt: new Date(),
+        });
+      }
+
+      if (action === "REJECT") {
+        tx.update(clubRef, { 
+          status: "RECHAZADO",
+          updateAt: new Date(),
+        });
+      }
     });
+
+    
 
     res.json({ success: true, status: newStatus });
   } catch (err) {
