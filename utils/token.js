@@ -8,7 +8,7 @@ if (!ACCESS_SECRET || !REFRESH_SECRET) {
 }
 
 const generateAccessToken = (payload) => {
-  return jwt.sign(payload,ACCESS_SECRET, { expiresIn: "30s" })
+  return jwt.sign(payload,ACCESS_SECRET, { expiresIn: "15m" })
 }
 
 const generateRefreshToken = (payload) => {
