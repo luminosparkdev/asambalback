@@ -1,6 +1,7 @@
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
-require("dotenv").config();
+const cookieParser = require("cookie-parser");
 
 const authRoutes = require("./routes/auth.routes");
 const usersRoutes = require("./routes/users.routes");
@@ -11,9 +12,16 @@ const asambalRoutes = require("./routes/asambal.routes");
 
 const app = express();
 
-app.use(cors());
-app.use(express.json());
+const corsOptions = {
+    origin: ["http://localhost:5173", "http://127.0.0.1:5173"],
+    credentials: true,
+    methods: "GET,POST,PUT,PATCH,DELETE,OPTIONS",
+    allowedHeaders: ["Content-Type", "Authorization"],
+};
 
+app.use(cors(corsOptions));
+app.use(express.json());
+app.use(cookieParser());    
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
 app.use("/api/clubs", clubsRoutes);

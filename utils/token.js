@@ -1,13 +1,26 @@
 const jwt = require("jsonwebtoken");
 
-const SECRET = process.env.JWT_SECRET || "unSecretSuperSecreto";
+const ACCESS_SECRET = process.env.ACCESS_SECRET;
+const REFRESH_SECRET = process.env.REFRESH_SECRET;
 
-const generateToken = (payload, expiresIn = "1h") => {
-  return jwt.sign(payload, SECRET, { expiresIn });
+if (!ACCESS_SECRET || !REFRESH_SECRET) {
+  throw new Error("No se encontraron variables de entorno");
+}
+
+const generateAccessToken = (payload) => {
+  return jwt.sign(payload,ACCESS_SECRET, { expiresIn: "15m" })
+}
+
+const generateRefreshToken = (payload) => {
+  return jwt.sign(payload,REFRESH_SECRET, { expiresIn: "7d" })
 };
 
-const verifyToken = (token) => {
-  return jwt.verify(token, SECRET);
+const verifyAccessToken = (token) => {
+  return jwt.verify(token,ACCESS_SECRET);
 };
 
-module.exports = { generateToken, verifyToken };
+const verifyRefreshToken = (token) => {
+  return jwt.verify(token,REFRESH_SECRET);
+};
+
+module.exports = { generateAccessToken, generateRefreshToken, verifyAccessToken, verifyRefreshToken };
