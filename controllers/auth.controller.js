@@ -1,6 +1,7 @@
 const { db } = require("../config/firebase");
 const bcrypt = require("bcryptjs");
-const { generateAccessToken, generateRefreshToken } = require("../utils/token");
+const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require("../utils/token");
+
 
 // LOGIN
 const login = async (req, res) => {
@@ -77,6 +78,7 @@ const refreshToken = async (req, res) => {
 
     res.json({ token: newAccessToken });
   } catch (err) {
+    console.error("❌ ERROR refreshToken:", err.message);
     res.status(401).json({ message: "Refresh token inválido" });
   }
 };
@@ -85,7 +87,6 @@ const refreshToken = async (req, res) => {
 const activateAccount = async (req, res) => {
   try {
     const { email, password, token, } = req.body;
-    console.log(email, password, token);
 
     const userSnap = await db
       .collection("usuarios")
