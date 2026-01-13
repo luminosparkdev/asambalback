@@ -32,7 +32,7 @@ const createProfesor = async (req, res) => {
     const activationToken = generateActivationToken();
 
     const userRef = db.collection("usuarios").doc();
-    const coachRef = db.collection("profesores").doc();
+    const coachRef = db.collection("profesores").doc(userRef.id);
 
     await db.runTransaction(async (tx) =>{
         //USUARIO
@@ -176,46 +176,44 @@ const toggleProfesorStatus = async (req, res) => {
 
 const completeProfesorProfile = async (req, res) => {
   try {
-    const { coachId } = req.params;
     const {
       telefono,
       domicilio,
       enea,
     } = req.body;
 
-    const coachRef = db.collection("profesores").doc(coachId);
-    const coachSnap = await coachRef.get();
+    const userId = req.user.userId;
 
-    if (!coachSnap.exists) {
+    const snap = await db
+    .collection("profesores")
+    .where("userId", "==", userId)
+    .limit(1)
+    .get();
+
+    if (snap.empty) {
       return res.status(404).json({ message: "Profesor no encontrado" });
     }
 
-    if (coachSnap.data().clubId !== req.user.clubId) {
+    const coachDoc = snap.docs[0];
+    const coachRef = coachDoc.ref;
+
+    if (coachDoc.data().clubId !== req.user.clubId) {
       return res.status(403).json({ message: "Acceso denegado" });
     }
-
-    const coachData = coachSnap.data();
 
     await db.runTransaction(async (tx) => {
       tx.update(coachRef, {
         telefono,
         domicilio,
         enea,
-        status: "PENDIENTE_VALIDACION",
+        status: "PENDIENTE",
         updatedAt: new Date(),
       });
 
-      const userSnap = await db
-        .collection("usuarios")
-        .doc(coachData.userId)
-        .get();
-
-      if (!userSnap.empty) {
-        tx.update(userSnap.ref, {
-          status: "PENDIENTE_VALIDACION",
-          updatedAt: new Date(),
-        });
-      }
+      tx.update(db.collection("usuarios").doc(userId), {
+        status: "PENDIENTE",
+        updatedAt: new Date(),
+      });
     });
 
     res.json({ success: true });
@@ -278,6 +276,22 @@ const validateCoach = async (req, res) => {
   }
 };
 
+const getMyCoachProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const doc = await db.collection("profesores").doc(userId).get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Profesor no encontrado" });
+    }
+
+    res.json({ id: doc.id, ...doc.data() });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 
 module.exports = {
   createProfesor,
@@ -288,4 +302,5 @@ module.exports = {
   completeProfesorProfile,
   getPendingCoaches,
   validateCoach,
+  getMyCoachProfile,
 };
