@@ -122,6 +122,7 @@ const activateAccount = async (req, res) => {
     });
 
     const tokenJwt = generateAccessToken({
+      id: userDoc.id,
       email: userData.email,
       role: userData.role,
       clubId: userData.clubId || null,

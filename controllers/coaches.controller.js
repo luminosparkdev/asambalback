@@ -117,7 +117,7 @@ const getProfesorById = async (req, res) => {
 const updateProfesor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, apellido, email, enea, isActive } = req.body;
+    const { nombre, apellido, email, enea, status } = req.body;
 
     const ref = db.collection("profesores").doc(id);
     const snap = await ref.get();
@@ -135,7 +135,7 @@ const updateProfesor = async (req, res) => {
       apellido,
       email,
       enea,
-      isActive,
+      status,
       updatedAt: new Date(),
     });
 
@@ -150,25 +150,47 @@ const toggleProfesorStatus = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const ref = db.collection("profesores").doc(id);
-    const snap = await ref.get();
+    const coachRef = db.collection("profesores").doc(id);
 
-    if (!snap.exists) {
-      return res.status(404).json({ message: "Profesor no encontrado" });
-    }
+    let newStatus = null;
 
-    if (snap.data().clubId !== req.user.clubId) {
-      return res.status(403).json({ message: "Acceso denegado" });
-    }
+    await db.runTransaction(async (tx) => {
+      const coachSnap = await tx.get(coachRef);
 
-    const newStatus = !snap.data().isActive;
+      if (!coachSnap.exists) {
+        throw new Error("Profesor no encontrado");
+      }
 
-    await ref.update({
-      status: newStatus,
-      updatedAt: new Date(),
-    });
+      const currentStatus = coachSnap.data().status;
 
-    res.json({ success: true, isActive: newStatus });
+      if (!["ACTIVO", "INACTIVO"].includes(currentStatus)) {
+        throw new Error(`No se puede cambiar el estado del profesor desde ${currentStatus}`);
+      }
+
+      newStatus = currentStatus === "ACTIVO" ? "INACTIVO" : "ACTIVO";
+
+      tx.update(coachRef, {
+        status: newStatus,
+        updatedAt: new Date(),
+      });
+
+      if (newStatus === "INACTIVO") {
+      const userSnap = await db
+      .collection("usuarios")
+      .where("coachId", "==", id)
+      .where("status", "==", "ACTIVO")
+      .get();
+
+      userSnap.docs.forEach(doc => {
+        tx.update(doc.ref, {
+          status: "INACTIVO",
+          updatedAt: new Date(),
+        });
+      });
+      }
+    });    
+
+    res.json({ success: true, status: newStatus });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -182,7 +204,7 @@ const completeProfesorProfile = async (req, res) => {
       enea,
     } = req.body;
 
-    const userId = req.user.userId;
+    const userId = req.user.id;
 
     const snap = await db
     .collection("profesores")
@@ -227,7 +249,7 @@ const getPendingCoaches = async (req, res) => {
     const snap = await db
       .collection("profesores")
       .where("clubId", "==", req.user.clubId)
-      .where("status", "==", "PENDIENTE_VALIDACION")
+      .where("status", "==", "PENDIENTE")
       .get();
 
     const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -239,7 +261,8 @@ const getPendingCoaches = async (req, res) => {
 
 const validateCoach = async (req, res) => {
   try {
-    const { coachId, action } = req.body;
+    const { coachId } = req.params;
+    const { action } = req.body;
 
     if (!["APPROVE", "REJECT"].includes(action)) {
       return res.status(400).json({ message: "Acción inválida" });
@@ -255,6 +278,12 @@ const validateCoach = async (req, res) => {
     const coachData = coachSnap.data();
 
     const newStatus = action === "APPROVE" ? "ACTIVO" : "RECHAZADO";
+
+    const userRef = db.collection("usuarios").doc(coachData.userId);
+    const userSnap = await userRef.get();
+
+    console.log("userId:", coachData.userId);
+    console.log("usuario existe:", userSnap.exists)
 
     await db.runTransaction(async (tx) => {
       tx.update(coachRef, {

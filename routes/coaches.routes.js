@@ -69,7 +69,7 @@ router.put(
 router.patch(
   "/:id/toggle",
   authMiddleware,
-  requireRole("profesor"),
+  requireRole("admin_club"),
   toggleProfesorStatus
 );
 
