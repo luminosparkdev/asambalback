@@ -10,8 +10,36 @@ const {
   getPlayerById,
   updatePlayer,
   togglePlayerStatus,
+  completePlayerProfile,
+  getPendingPlayers,
+  validatePlayer,
 } = require("../controllers/players.controller");
 
+// LISTAR JUGADORES PENDIENTES DE VALIDACIÓN
+router.get(
+  "/pending-players",
+  authMiddleware,
+  requireRole("admin_club"),
+  getPendingPlayers
+);
+
+// VALIDAR / RECHAZAR JUGADOR
+router.patch(
+  "/:playerId/validate-player",
+  authMiddleware,
+  requireRole("admin_club"),
+  validatePlayer
+);
+
+// COMPLETAR PERFIL JUGADOR
+router.post(
+  "/complete-profile",
+  authMiddleware,
+  requireRole("admin_club"),
+  completePlayerProfile
+);
+
+// CREAR JUGADOR
 router.post(
   "/",
   authMiddleware,
@@ -19,6 +47,7 @@ router.post(
   createPlayer
 );
 
+// LISTAR JUGADORES DEL CLUB
 router.get(
   "/",
   authMiddleware,
@@ -26,6 +55,8 @@ router.get(
   getPlayers
 );
 
+// Rutas dinámicas (con :id) al final
+// OBTENER JUGADOR POR ID
 router.get(
   "/:id",
   authMiddleware,
@@ -33,6 +64,7 @@ router.get(
   getPlayerById
 );
 
+// EDITAR JUGADOR
 router.put(
   "/:id",
   authMiddleware,
@@ -40,6 +72,7 @@ router.put(
   updatePlayer
 );
 
+// ACTIVAR / DESACTIVAR JUGADOR
 router.patch(
   "/:id/toggle",
   authMiddleware,
