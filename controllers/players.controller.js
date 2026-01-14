@@ -312,9 +312,14 @@ const getPendingPlayers = async (req, res) => {
 
 const validatePlayer = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { playerId } = req.params;
+    const {action} = req.body;
 
-    const playerRef = db.collection("jugadores").doc(id);
+    if (!["APPROVE", "REJECT"].includes(action)) {
+      return res.status(400).json({ message: "Acción inválida" });
+    }
+
+    const playerRef = db.collection("jugadores").doc(playerId);
     const playerDoc = await playerRef.get();
 
     if (!playerDoc.exists) {
@@ -322,16 +327,17 @@ const validatePlayer = async (req, res) => {
     }
 
     const { userId } = playerDoc.data();
+    const newStatus = action === "APPROVE" ? "ACTIVO" : "RECHAZADO";
 
     await db.runTransaction(async (tx) => {
       tx.update(playerRef, {
         status: "ACTIVO",
-        isAuthorized: true,
+        isAuthorized: action === "APPROVE",
         updatedAt: new Date(),
       });
 
       tx.update(db.collection("usuarios").doc(userId), {
-        status: "ACTIVO",
+        status: newStatus,
         updatedAt: new Date(),
       });
     });

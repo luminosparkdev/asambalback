@@ -19,7 +19,7 @@ const {
 router.get(
   "/pending-players",
   authMiddleware,
-  requireRole("admin_club"),
+  requireRole("profesor"),
   getPendingPlayers
 );
 
@@ -27,7 +27,7 @@ router.get(
 router.patch(
   "/:playerId/validate-player",
   authMiddleware,
-  requireRole("admin_club"),
+  requireRole("profesor"),
   validatePlayer
 );
 
@@ -35,7 +35,7 @@ router.patch(
 router.post(
   "/complete-profile",
   authMiddleware,
-  requireRole("admin_club"),
+  requireRole("jugador"),
   completePlayerProfile
 );
 

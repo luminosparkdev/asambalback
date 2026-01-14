@@ -117,7 +117,7 @@ const getProfesorById = async (req, res) => {
 const updateProfesor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, apellido, email, enea, status } = req.body;
+    const { nombre, apellido, dni, email, telefono, domicilio, categoria, enea } = req.body;
 
     const ref = db.collection("profesores").doc(id);
     const snap = await ref.get();
@@ -130,14 +130,19 @@ const updateProfesor = async (req, res) => {
       return res.status(403).json({ message: "Acceso denegado" });
     }
 
-    await ref.update({
-      nombre,
-      apellido,
-      email,
-      enea,
-      status,
-      updatedAt: new Date(),
+    const allowedFields = ["nombre", "apellido", "dni", "telefono", "domicilio", "categoria", "enea"];
+
+    const dataToUpdate = {};
+
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        dataToUpdate[field] = req.body[field];
+      }
     });
+
+    dataToUpdate.updatedAt = new Date();
+
+    await ref.update(dataToUpdate);
 
     res.json({ success: true });
   } catch (err) {
@@ -173,21 +178,6 @@ const toggleProfesorStatus = async (req, res) => {
         status: newStatus,
         updatedAt: new Date(),
       });
-
-      if (newStatus === "INACTIVO") {
-      const userSnap = await db
-      .collection("usuarios")
-      .where("coachId", "==", id)
-      .where("status", "==", "ACTIVO")
-      .get();
-
-      userSnap.docs.forEach(doc => {
-        tx.update(doc.ref, {
-          status: "INACTIVO",
-          updatedAt: new Date(),
-        });
-      });
-      }
     });    
 
     res.json({ success: true, status: newStatus });
