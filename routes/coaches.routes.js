@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const { getMyCoachProfile } = require("../controllers/coaches.controller");
 
 const authMiddleware = require("../middlewares/auth.middleware");
 const requireRole = require("../middlewares/requireRole.middleware");
@@ -43,6 +44,14 @@ router.get(
   getProfesores
 );
 
+
+router.get(
+  "/me",
+  authMiddleware,
+  requireRole("profesor"),
+  getMyCoachProfile
+);
+
 router.get(
   "/:id",
   authMiddleware,
@@ -67,12 +76,8 @@ router.patch(
 router.post(
     "/complete-profile", 
     authMiddleware,
-    requireRole("admin_club"),
+    requireRole("profesor"),
     completeProfesorProfile
 );
-
-
-
-
 
 module.exports = router;

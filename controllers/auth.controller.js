@@ -1,6 +1,7 @@
 const { db } = require("../config/firebase");
 const bcrypt = require("bcryptjs");
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require("../utils/token");
+const { createAuthUserIfNotExists } = require("../utils/firebaseAuth");
 
 
 // LOGIN
@@ -108,6 +109,10 @@ const activateAccount = async (req, res) => {
 
     const newStatus =
       userData.role === "admin_asambal" ? "ACTIVO" : "PENDIENTE";
+
+    if (newStatus === "ACTIVO" && userData.role === "admin_asambal") {
+      await createAuthUserIfNotExists(email, password);
+    } 
 
     await userDoc.ref.update({
       password: hashedPassword,

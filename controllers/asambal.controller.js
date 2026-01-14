@@ -1,4 +1,5 @@
 const { db } = require("../config/firebase");
+const { createAuthUserIfNotExists } = require("../utils/firebaseAuth");
 
 const getPendingUsers = async (req, res) => {
   try {
@@ -77,7 +78,9 @@ const validateUser = async (req, res) => {
       }
     });
 
-    
+    if (action === "APPROVE") {
+      await createAuthUserIfNotExists(userData.email);
+    }
 
     res.json({ success: true, status: newStatus });
   } catch (err) {
