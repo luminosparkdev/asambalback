@@ -15,19 +15,23 @@ const {
   validatePlayer,
 } = require("../controllers/players.controller");
 
+// ==========================
+// RUTAS ESPECIALES
+// ==========================
+
 // LISTAR JUGADORES PENDIENTES DE VALIDACIÓN
 router.get(
-  "/pending-players",
+  "/pending",
   authMiddleware,
-  requireRole("profesor"),
+  requireRole(["profesor"]),
   getPendingPlayers
 );
 
 // VALIDAR / RECHAZAR JUGADOR
 router.patch(
-  "/:playerId/validate-player",
+  "/:id/validate",
   authMiddleware,
-  requireRole("profesor"),
+  requireRole(["profesor"]),
   validatePlayer
 );
 
@@ -35,9 +39,13 @@ router.patch(
 router.post(
   "/complete-profile",
   authMiddleware,
-  requireRole("jugador"),
+  requireRole(["jugador"]),
   completePlayerProfile
 );
+
+// ==========================
+// CRUD PRINCIPAL
+// ==========================
 
 // CREAR JUGADOR
 router.post(
@@ -55,7 +63,6 @@ router.get(
   getPlayers
 );
 
-// Rutas dinámicas (con :id) al final
 // OBTENER JUGADOR POR ID
 router.get(
   "/:id",

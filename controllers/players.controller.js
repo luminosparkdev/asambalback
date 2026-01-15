@@ -12,7 +12,7 @@ const createPlayer = async (req, res) => {
       nombre,
       apellido,
       sexo,
-      fechanacimiento, // ojo que acá debe coincidir con el frontend
+      fechanacimiento, // debe coincidir con frontend
       edad,
       dni,
       email,
@@ -33,7 +33,7 @@ const createPlayer = async (req, res) => {
       tutor, // opcional si <16
     } = req.body;
 
-    // VALIDAMOS DATOS OBLIGATORIOS
+    // VALIDAR DATOS OBLIGATORIOS
     if (
       !nombre ||
       !apellido ||
@@ -46,13 +46,32 @@ const createPlayer = async (req, res) => {
       !domicilio ||
       !categoria
     ) {
-      return res.status(400).json({ message: "Faltan datos" });
+      return res.status(400).json({ message: "Faltan datos obligatorios" });
+    }
+
+    // Validar aceptación de términos obligatorios
+    if (reglasclub !== true || usoimagen !== true) {
+      return res.status(400).json({ message: "Debes aceptar las reglas del club y el uso de imagen para continuar" });
     }
 
     if (!req.user.clubId) {
       return res.status(400).json({ message: "Usuario sin club asignado" });
     }
 
+    // Buscar coachId correcto (id documento de profesor)
+    const profSnapshot = await db
+      .collection("profesores")
+      .where("email", "==", req.user.email)
+      .limit(1)
+      .get();
+
+    if (profSnapshot.empty) {
+      return res.status(400).json({ message: "Profesor no encontrado" });
+    }
+
+    const coachId = profSnapshot.docs[0].id;
+
+    // Verificar que no exista ya jugador con mismo email
     const existing = await db
       .collection("jugadores")
       .where("email", "==", email)
@@ -102,10 +121,10 @@ const createPlayer = async (req, res) => {
         usoimagen,
         horariocobro,
         año,
-        tutor: edad < 16 ? tutor || {} : null, // solo si <16
+        tutor: edad < 16 ? tutor || {} : null,
 
         clubId: req.user.clubId,
-        coachId: req.user.role === "profesor" && req.user.id ? req.user.id : null,
+        coachId,
         userId: userRef.id,
         status: "INCOMPLETO",
         isActive: true,
@@ -124,6 +143,7 @@ const createPlayer = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 const getPlayers = async (req, res) => {
   try {
