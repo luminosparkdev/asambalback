@@ -11,47 +11,18 @@ const createPlayer = async (req, res) => {
     const {
       nombre,
       apellido,
-      sexo,
-      fechanacimiento, // debe coincidir con frontend
-      edad,
-      dni,
       email,
-      telefono,
-      domicilio,
-      domiciliocobro,
       categoria,
-      nivel,
-      peso,
-      estatura,
-      escuela,
-      turno,
-      instagram,
-      reglasclub,
-      usoimagen,
-      horariocobro,
-      año,
-      tutor, // opcional si <16
     } = req.body;
 
     // VALIDAR DATOS OBLIGATORIOS
     if (
       !nombre ||
       !apellido ||
-      !sexo ||
-      !fechanacimiento ||
-      !edad ||
-      !dni ||
       !email ||
-      !telefono ||
-      !domicilio ||
       !categoria
     ) {
       return res.status(400).json({ message: "Faltan datos obligatorios" });
-    }
-
-    // Validar aceptación de términos obligatorios
-    if (reglasclub !== true || usoimagen !== true) {
-      return res.status(400).json({ message: "Debes aceptar las reglas del club y el uso de imagen para continuar" });
     }
 
     if (!req.user.clubId) {
@@ -89,7 +60,7 @@ const createPlayer = async (req, res) => {
       // USUARIO
       tx.set(userRef, {
         email,
-        role: "player",
+        role: "jugador",
         clubId: req.user.clubId,
         status: "INCOMPLETO",
         activationToken,
@@ -102,34 +73,12 @@ const createPlayer = async (req, res) => {
       tx.set(playerRef, {
         nombre,
         apellido,
-        sexo,
-        fechanacimiento,
-        edad,
-        dni,
         email,
-        telefono,
-        domicilio,
-        domiciliocobro,
         categoria,
-        nivel,
-        peso,
-        estatura,
-        escuela,
-        turno,
-        instagram,
-        reglasclub,
-        usoimagen,
-        horariocobro,
-        año,
-        tutor: edad < 16 ? tutor || {} : null,
-
         clubId: req.user.clubId,
         coachId,
         userId: userRef.id,
         status: "INCOMPLETO",
-        isActive: true,
-        isAuthorized: false,
-        imageAuthorization: false,
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -150,7 +99,35 @@ const getPlayers = async (req, res) => {
       const snapshot = await db.collection("jugadores").get();
       const players = snapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate().toISOString(),
+        updatedAt: doc.data().updatedAt?.toDate().toISOString(),
+      }));
+      res.json(players);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ message: err.message });
+  }
+};
+
+const getPlayersByCoach = async (req, res) => {
+  const { coachId } = req.user;
+
+  if (!coachId) {
+    return res.status(400).json({ message: "CoachId no proporcionado" });
+  }
+
+  try {
+      const snapshot = await db
+      .collection("jugadores")
+      .where("coachId", "==", coachId)
+      .get();
+
+      const players = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt?.toDate().toISOString(),
+        updatedAt: doc.data().updatedAt?.toDate().toISOString(),
       }));
       res.json(players);
     } catch (err) {
@@ -161,12 +138,18 @@ const getPlayers = async (req, res) => {
 
 const getPlayerById = async (req, res) => {
   try {
-    const { id } = req.params;
-    const doc = await db.collection("jugadores").doc(id).get();
+    const doc = await db.collection("jugadores").doc(req.params.id).get();
+
     if (!doc.exists) {
       return res.status(404).json({ message: "Jugador no encontrado" });
     }
-    res.json({ id: doc.id, ...doc.data() });
+
+    res.json({ 
+      id: doc.id, 
+      ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate().toISOString(),
+      updatedAt: doc.data().updatedAt?.toDate().toISOString(),
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });
@@ -176,58 +159,38 @@ const getPlayerById = async (req, res) => {
 const updatePlayer = async (req, res) => {
   try {
     const { id } = req.params;
-    const {
-      nombre,
-      apellido,
-      sexo,
-      fechanacimiento,
-      edad,
-      dni,
-      email,
-      telefono,
-      domicilio,
-      domiciliocobro,
-      categoria,
-      nivel,
-      peso,
-      estatura,
-      escuela,
-      turno,
-      instagram,
-      reglasclub,
-      usoimagen,
-      horariocobro,
-      año,
-    } = req.body;
+    const docRef = db.collection("jugadores").doc(id);
+    const snap = await docRef.get();
 
-    const doc = await db.collection("jugadores").doc(id).get();
-    if (!doc.exists) {
-        return res.status(404).json({ message: "Jugador no encontrado" });
+    if (!snap.exists) {
+      return res.status(404).json({ message: "Jugador no encontrado" });
     }
 
-    await db.collection("jugadores").doc(id).update({
-        nombre: nombre || doc.data().nombre, // si no viene, mantiene el valor actual
-        apellido: apellido || doc.data().apellido, // si no viene, mantiene el valor actual
-        sexo: sexo || doc.data().sexo, // si no viene, mantiene el valor actual
-        fechanacimiento: fechanacimiento || doc.data().fechanacimiento, // si no viene, mantiene el valor actual
-        edad: edad || doc.data().edad, // si no viene, mantiene el valor actual
-        dni: dni || doc.data().dni, // si no viene, mantiene el valor actual
-        email: email || doc.data().email, // si no viene, mantiene el valor actual
-        telefono: telefono || doc.data().telefono, // si no viene, mantiene el valor actual
-        domicilio: domicilio || doc.data().domicilio, // si no viene, mantiene el valor actual
-        domiciliocobro: domiciliocobro || doc.data().domiciliocobro, // si no viene, mantiene el valor actual
-        categoria: categoria || doc.data().categoria, // si no viene, mantiene el valor actual
-        nivel: nivel || doc.data().nivel, // si no viene, mantiene el valor actual
-        peso: peso || doc.data().peso, // si no viene, mantiene el valor actual
-        estatura: estatura || doc.data().estatura, // si no viene, mantiene el valor actual
-        escuela: escuela || doc.data().escuela, // si no viene, mantiene el valor actual
-        turno: turno || doc.data().turno ,// si no viene, mantiene el valor actual
-        instagram: instagram || doc.data().instagram ,// si no viene, mantiene el valor actual
-        reglasclub: reglasclub || doc.data().reglasclub ,// si no viene, mantiene el valor actual
-        usoimagen: usoimagen || doc.data().usoimagen ,// si no viene, mantiene el valor actual
-        horariocobro: horariocobro || doc.data().horariocobro ,// si no viene, mantiene el valor actual
-        año: año||doc.data().año ,//si 16 o más se puede actualizar
+    const docData = snap.data();
 
+    await docRef.update({
+      nombre: req.body.nombre ?? docData.nombre,
+      apellido: req.body.apellido ?? docData.apellido,
+      sexo: req.body.sexo ?? docData.sexo,
+      fechanacimiento: req.body.fechaNacimiento ?? docData.fechaNacimiento,
+      edad: req.body.edad ?? docData.edad,
+      dni: req.body.dni ?? docData.dni,
+      email: req.body.email ?? docData.email,
+      telefono: req.body.telefono ?? docData.telefono,
+      domicilio: req.body.domicilio ?? docData.domicilio,
+      domiciliocobro: req.body.domiciliocobro ?? docData.domiciliocobro,
+      categoria: req.body.categoria ?? docData.categoria,
+      nivel: req.body.nivel ?? docData.nivel,
+      peso: req.body.peso ?? docData.peso,
+      estatura: req.body.estatura ?? docData.estatura,
+      escuela: req.body.escuela ?? docData.escuela,
+      turno: req.body.turno ?? docData.turno,
+      instagram: req.body.instagram ?? docData.instagram,
+      reglasclub: req.body.reglasclub ?? docData.reglasclub,
+      usoimagen: req.body.usoimagen ?? docData.usoimagen,
+      horariocobro: req.body.horariocobro ?? docData.horariocobro,
+      año: req.body.año ?? docData.año,
+      updatedAt: new Date(),
     });
 
     res.json({ message: "Jugador modificado exitosamente" });
@@ -239,14 +202,17 @@ const updatePlayer = async (req, res) => {
 
 const togglePlayerStatus = async (req, res) => {
   try {
-    const { id } = req.params;
-    const doc = await db.collection("jugadores").doc(id).get();
-    if (!doc.exists) {
+    const ref = db.collection("jugadores").doc(req.params.id);
+    const snap = await ref.get();
+    if (!snap.exists) {
       return res.status(404).json({ message: "Jugador no encontrado" });
     }
-    const currentStatus = doc.data().estado;
-    await db.collection("jugadores").doc(id).update({
-      estado: !currentStatus
+
+    const newStatus = snap.data().status === "ACTIVO" ? "INACTIVO" : "ACTIVO";
+
+    await ref.update({
+      status: newStatus,
+      updatedAt: new Date(),
     });
     res.json({ message: "Estado del jugador actualizado correctamente" });
   } catch (err) {
@@ -257,21 +223,8 @@ const togglePlayerStatus = async (req, res) => {
 
 const completePlayerProfile = async (req, res) => {
   try {
-    const { token } = req.params;
     const data = req.body;
-
-    const userSnap = await db
-      .collection("usuarios")
-      .where("activationToken", "==", token)
-      .limit(1)
-      .get();
-
-    if (userSnap.empty) {
-      return res.status(400).json({ message: "Token inválido o expirado" });
-    }
-
-    const userDoc = userSnap.docs[0];
-    const userId = userDoc.id;
+    const userId = req.user.id;
 
     const playerSnap = await db
       .collection("jugadores")
@@ -288,12 +241,12 @@ const completePlayerProfile = async (req, res) => {
     await db.runTransaction(async (tx) => {
       tx.update(db.collection("jugadores").doc(playerDoc.id), {
         ...data,
-        status: "PENDIENTE_VALIDACION",
+        status: "PENDIENTE",
         updatedAt: new Date(),
       });
 
       tx.update(db.collection("usuarios").doc(userId), {
-        status: "PENDIENTE_VALIDACION",
+        status: "PENDIENTE",
         activationToken: null,
         updatedAt: new Date(),
       });
@@ -315,12 +268,14 @@ const getPendingPlayers = async (req, res) => {
     const snapshot = await db
       .collection("jugadores")
       .where("clubId", "==", req.user.clubId)
-      .where("status", "==", "PENDIENTE_VALIDACION")
+      .where("status", "==", "PENDIENTE")
       .get();
 
     const players = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
+      createdAt: doc.data().createdAt?.toDate().toISOString(),
+      updatedAt: doc.data().updatedAt?.toDate().toISOString(),
     }));
 
     res.json(players);
@@ -332,14 +287,14 @@ const getPendingPlayers = async (req, res) => {
 
 const validatePlayer = async (req, res) => {
   try {
-    const { playerId } = req.params;
+    const { id } = req.params;
     const {action} = req.body;
 
     if (!["APPROVE", "REJECT"].includes(action)) {
       return res.status(400).json({ message: "Acción inválida" });
     }
 
-    const playerRef = db.collection("jugadores").doc(playerId);
+    const playerRef = db.collection("jugadores").doc(id);
     const playerDoc = await playerRef.get();
 
     if (!playerDoc.exists) {
@@ -351,7 +306,7 @@ const validatePlayer = async (req, res) => {
 
     await db.runTransaction(async (tx) => {
       tx.update(playerRef, {
-        status: "ACTIVO",
+        status: newStatus,
         isAuthorized: action === "APPROVE",
         updatedAt: new Date(),
       });
@@ -369,9 +324,37 @@ const validatePlayer = async (req, res) => {
   }
 };
 
+const getPlayerByUserId = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const snapshot = await db
+      .collection("jugadores")
+      .where("userId", "==", userId)
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({ message: "Jugador no encontrado" });
+    }
+
+    const player = {
+      id: snapshot.docs[0].id,
+      ...snapshot.docs[0].data(),
+    };
+
+    res.json(player);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   createPlayer,
   getPlayers,
+  getPlayersByCoach,
+  getPlayerByUserId,
   getPlayerById,
   updatePlayer,
   togglePlayerStatus,

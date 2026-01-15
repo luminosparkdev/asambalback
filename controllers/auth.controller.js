@@ -14,6 +14,19 @@ const login = async (req, res) => {
 
     const userData = userSnap.docs[0].data();
 
+    let coachId = null;
+    if (userData.role === "profesor") {
+      const profSnap = await db
+      .collection("profesores")
+      .where("email", "==", userData.email)
+      .limit(1)
+      .get();
+      
+      if (!profSnap.empty) {
+        coachId = profSnap.docs[0].id;
+      }
+    }
+
     if (userData.status !== "ACTIVO") {
       return res.status(400).json({
         message: "Usuario no activo",
@@ -23,7 +36,7 @@ const login = async (req, res) => {
     const isMatch = bcrypt.compareSync(password, userData.password);
     if (!isMatch) return res.status(400).json({ message: "Contraseña incorrecta" });
 
-    const accessToken = generateAccessToken({ email: userData.email, role: userData.role, clubId: userData.clubId || null });
+    const accessToken = generateAccessToken({ email: userData.email, role: userData.role, clubId: userData.clubId || null, coachId });
     const refreshToken = generateRefreshToken({ email: userData.email });
 
     res.
@@ -38,6 +51,7 @@ const login = async (req, res) => {
         email: userData.email, 
         role: userData.role, 
         clubId: userData.clubId || null,
+        coachId,
       }, 
       token: accessToken });
   } catch (err) {
@@ -71,10 +85,25 @@ const refreshToken = async (req, res) => {
       return res.status(403).json({ message: "Usuario no activo" });
     }
 
+    let coachId = null;
+
+    if (user.role === "profesor") {
+      const profSnap = await db
+      .collection("profesores")
+      .where("email", "==", user.email)
+      .limit(1)
+      .get();
+      
+      if (!profSnap.empty) {
+        coachId = profSnap.docs[0].id;
+      }
+    } 
+    
     const newAccessToken = generateAccessToken({
       email: user.email,
       role: user.role,
       clubId: user.clubId || null,
+      coachId,
     });
 
     res.json({ token: newAccessToken });
@@ -128,7 +157,9 @@ const activateAccount = async (req, res) => {
       clubId: userData.clubId || null,
     });
 
-    res.json({ success: true, newStatus, userId: userDoc.id, role: userData.role, clubId: userData.clubId || null , token: tokenJwt});
+    res.json({ success: true, newStatus, userId: userDoc.id, role: userData.role, 
+      clubId: userData.clubId || null,
+      token: tokenJwt});
   } catch (err) {
     console.error("❌ ERROR activateAccount:", err);
     res.status(500).json({ message: err.message });

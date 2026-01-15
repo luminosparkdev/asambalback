@@ -7,6 +7,8 @@ const requireRole = require("../middlewares/requireRole.middleware");
 const {
   createPlayer,
   getPlayers,
+  getPlayersByCoach,
+  getPlayerByUserId,
   getPlayerById,
   updatePlayer,
   togglePlayerStatus,
@@ -21,7 +23,7 @@ const {
 
 // LISTAR JUGADORES PENDIENTES DE VALIDACIÓN
 router.get(
-  "/pending",
+  "/pending-players",
   authMiddleware,
   requireRole(["profesor"]),
   getPendingPlayers
@@ -29,7 +31,7 @@ router.get(
 
 // VALIDAR / RECHAZAR JUGADOR
 router.patch(
-  "/:id/validate",
+  "/:id/validate-player",
   authMiddleware,
   requireRole(["profesor"]),
   validatePlayer
@@ -59,15 +61,29 @@ router.post(
 router.get(
   "/",
   authMiddleware,
-  requireRole(["profesor", "admin_club"]),
+  requireRole(["admin_club"]),
   getPlayers
+);
+
+router.get(
+  "/me",
+  authMiddleware,
+  requireRole(["jugador"]),
+  getPlayerByUserId
+);
+// LISTAR JUGADORES DEL PROFESOR
+router.get(
+  "/players-by-coach",
+  authMiddleware,
+  requireRole(["profesor"]),
+  getPlayersByCoach
 );
 
 // OBTENER JUGADOR POR ID
 router.get(
   "/:id",
   authMiddleware,
-  requireRole(["profesor", "admin_club"]),
+  requireRole(["profesor", "admin_club", "jugador"]),
   getPlayerById
 );
 
