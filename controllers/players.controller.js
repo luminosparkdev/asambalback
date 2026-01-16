@@ -2,6 +2,18 @@ const { db } = require("../config/firebase");
 const crypto = require("crypto");
 const { sendActivationEmail } = require("../utils/mailer");
 
+const serializeTimestamps = (data) => {
+  const result = {};
+  for (const key in data) {
+    if (data[key]?.toDate) {
+      result[key] = data[key].toDate();
+    } else {
+      result[key] = data[key];
+    }
+  }
+  return result;
+};
+
 // GENERAMOS TOKEN
 const generateActivationToken = () => crypto.randomBytes(20).toString("hex");
 
@@ -138,7 +150,7 @@ const getPlayersByCoach = async (req, res) => {
 
 const getPlayerById = async (req, res) => {
   try {
-    const doc = await db.collection("jugadores").doc(id).get();
+    const doc = await db.collection("jugadores").doc(req.params.id).get();
 
     if (!doc.exists) {
       return res.status(404).json({ message: "Jugador no encontrado" });
@@ -168,7 +180,7 @@ const updatePlayer = async (req, res) => {
 
     const docData = snap.data();
 
-    const updatedData = {
+    await docRef.update({
       nombre: req.body.nombre ?? docData.nombre,
       apellido: req.body.apellido ?? docData.apellido,
       sexo: req.body.sexo ?? docData.sexo,
@@ -190,21 +202,8 @@ const updatePlayer = async (req, res) => {
       usoimagen: req.body.usoimagen ?? docData.usoimagen,
       horariocobro: req.body.horariocobro ?? docData.horariocobro,
       año: req.body.año ?? docData.año,
-      posicion: req.body.posicion ?? docData.posicion,
-      manohabil: req.body.manohabil ?? docData.manohabil,
-
-      tutor: {
-        nombre: req.body.tutor?.nombre ?? docData.tutor?.nombre ?? "",
-        apellido: req.body.tutor?.apellido ?? docData.tutor?.apellido ?? "",
-        dni: req.body.tutor?.dni ?? docData.tutor?.dni ?? "",
-        email: req.body.tutor?.email ?? docData.tutor?.email ?? "",
-        telefono: req.body.tutor?.telefono ?? docData.tutor?.telefono ?? "",
-      },
-
       updatedAt: new Date(),
-    };
-
-    await docRef.update(updatedData);
+    });
 
     res.json({ message: "Jugador modificado exitosamente" });
   } catch (err) {
@@ -212,7 +211,6 @@ const updatePlayer = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 
 const togglePlayerStatus = async (req, res) => {
   try {
@@ -338,7 +336,7 @@ const validatePlayer = async (req, res) => {
   }
 };
 
-const getPlayerByUserId = async (req, res) => {
+const getMyPlayerProfile = async (req, res) => {
   try {
     const userId = req.user.id;
 
@@ -352,12 +350,67 @@ const getPlayerByUserId = async (req, res) => {
       return res.status(404).json({ message: "Jugador no encontrado" });
     }
 
-    const player = {
-      id: snapshot.docs[0].id,
-      ...snapshot.docs[0].data(),
-    };
+    const doc = snapshot.docs[0];
+    const data = serializeTimestamps(doc.data());
 
-    res.json(player);
+    // Devuelvo todo plano para que el frontend lo use directamente
+    res.json({
+      id: doc.id,
+      ...data,
+      createdAt: data.createdAt?.toISOString() || null,
+      updatedAt: data.updatedAt?.toISOString() || null,
+      status: data.status || "INACTIVO",
+      tutor: data.tutor || null,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const updateMyPlayerProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const snapshot = await db
+      .collection("jugadores")
+      .where("userId", "==", userId)
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({ message: "Jugador no encontrado" });
+    }
+
+    const ref = snapshot.docs[0].ref;
+
+    // CAMPOS EDITABLES
+    const allowedFields = [
+      "dni", "sexo", "fechanacimiento", "edad", "estatura", "peso",
+      "domicilio", "telefono", "instagram", "escuela", "nivel",
+      "año", "turno", "domiciliocobro", "horariocobro", "manohabil"
+    ];
+
+    const updateData = {};
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) updateData[field] = req.body[field];
+    });
+
+    updateData.updatedAt = new Date();
+
+    await ref.update(updateData);
+
+    const updatedSnap = await ref.get();
+    const data = serializeTimestamps(updatedSnap.data());
+
+    res.json({
+      id: ref.id,
+      ...data,
+      createdAt: data.createdAt?.toISOString() || null,
+      updatedAt: data.updatedAt?.toISOString() || null,
+      status: data.status || "INACTIVO",
+      tutor: data.tutor || null,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });
@@ -368,11 +421,12 @@ module.exports = {
   createPlayer,
   getPlayers,
   getPlayersByCoach,
-  getPlayerByUserId,
   getPlayerById,
   updatePlayer,
   togglePlayerStatus,
   completePlayerProfile,
   getPendingPlayers,
   validatePlayer,
+  getMyPlayerProfile,
+  updateMyPlayerProfile,
 };

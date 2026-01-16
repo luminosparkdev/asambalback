@@ -13,7 +13,8 @@ const {
   toggleProfesorStatus,
   validateCoach,
   completeProfesorProfile,
-  getPendingCoaches,    
+  getPendingCoaches,
+  updateMyCoachProfile    
 } = require("../controllers/coaches.controller");
 
 router.get(
@@ -50,6 +51,13 @@ router.get(
   authMiddleware,
   requireRole("profesor"),
   getMyCoachProfile
+);
+
+router.put(
+  "/me",
+  authMiddleware,
+  requireRole("profesor"),
+  updateMyCoachProfile
 );
 
 router.get(

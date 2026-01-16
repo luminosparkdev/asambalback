@@ -11,6 +11,8 @@ const authMiddleware = (req, res, next) => {
   try {
     const decoded = verifyAccessToken(token);
     req.user = decoded; // { email, role, clubId, ... }
+    console.log("AUTH USER:", req.user);
+    console.log("ROLE EN TOKEN:", req.user.role);
     next();
   } catch (err) {
     return res.status(401).json({ message: "Token inválido o expirado" });

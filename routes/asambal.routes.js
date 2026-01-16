@@ -5,7 +5,20 @@ const requireRole = require("../middlewares/requireRole.middleware");
 const {
   getPendingUsers,
   validateUser,
+  getMyAsambalProfile,
+  updateMyAsambalProfile,
 } = require("../controllers/asambal.controller");
+
+router.get("/me", 
+  authMiddleware, 
+  requireRole("admin_asambal"), 
+  getMyAsambalProfile
+);
+router.put("/me", 
+  authMiddleware, 
+  requireRole("admin_asambal"), 
+  updateMyAsambalProfile
+);
 
 router.get(
   "/pending-users",

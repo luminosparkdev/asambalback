@@ -299,13 +299,47 @@ const getMyCoachProfile = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const doc = await db.collection("profesores").doc(userId).get();
+    const snap = await db
+      .collection("profesores")
+      .where("userId", "==", userId)
+      .limit(1)
+      .get();
 
-    if (!doc.exists) {
+    if (snap.empty) {
       return res.status(404).json({ message: "Profesor no encontrado" });
     }
 
-    res.json({ id: doc.id, ...doc.data() });
+    const doc = snap.docs[0];
+    res.json({ id: doc.id, ...doc.data(),
+     });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const updateMyCoachProfile = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { enea } = req.body;
+
+    const snap = await db
+      .collection("profesores")
+      .where("userId", "==", userId)
+      .limit(1)
+      .get();
+
+    if (snap.empty) {
+      return res.status(404).json({ message: "Profesor no encontrado" });
+    }
+
+    const coachRef = snap.docs[0].ref;
+
+    await coachRef.update({
+      enea,
+      updatedAt: new Date(),
+    });
+
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -322,4 +356,5 @@ module.exports = {
   getPendingCoaches,
   validateCoach,
   getMyCoachProfile,
+  updateMyCoachProfile,
 };

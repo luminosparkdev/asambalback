@@ -1,7 +1,6 @@
 const { db } = require("../config/firebase");
 const crypto = require("crypto");
 const { sendActivationEmail } = require("../utils/mailer");
-const { logAudit } = require("../utils/auditlogger");
 
 // GENERAMOS TOKEN
 const generateActivationToken = () =>
@@ -155,16 +154,6 @@ const toggleClubStatus = async (req, res) => {
       }
     });
 
-    await logAudit({
-      req,
-      action:
-        newStatus === "INACTIVO"
-          ? "DEACTIVATE_CLUB_AND_USERS"
-          : "ACTIVATE_CLUB",
-      entity: "clubes",
-      entityId: id,
-    });
-
     res.json({
       success: true,
       status: newStatus,
@@ -225,14 +214,6 @@ const updateClub = async (req, res) => {
     });
 
     const updated = await clubRef.get();
-
-    await logAudit({
-      req,
-      action: "UPDATE_CLUB",
-      entity: "clubes",
-      entityId: id,
-      payload: req.body,
-    });
 
     res.json({
       success: true,
@@ -296,4 +277,59 @@ const completeClubProfile = async (req, res) => {
   }
 };
 
-module.exports = { createClubWithAdmin, getClubs, toggleClubStatus, getClubById, updateClub, completeClubProfile };
+const getMyClubProfile = async (req, res) => {
+  try {
+    const clubId = req.user.clubId;
+
+    const doc = await db.collection("clubes").doc(clubId).get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Club no encontrado" });
+    }
+
+    res.json({ id: doc.id, ...doc.data(), 
+      createdAt: normalizeDate(doc.data().createdAt),
+      updatedAt: normalizeDate(doc.data().updatedAt),
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const updateMyClub = async (req, res) => {
+  try {
+    const clubId = req.user.clubId;
+
+    const allowedFields = [
+      "ciudad",
+      "telefono",
+      "sede",
+      "responsable",
+      "canchas",
+      "canchasAlternativas",
+    ];
+
+    const dataToUpdate = {};
+
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        dataToUpdate[field] = req.body[field];
+      }
+    });
+
+    if (Object.keys(dataToUpdate).length === 0) {
+      return res.status(400).json({ message: "No hay campos válidos para actualizar" });
+    }
+
+    dataToUpdate.updatedAt = new Date();
+
+    await db.collection("clubes").doc(clubId).update(dataToUpdate);
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+module.exports = { createClubWithAdmin, getClubs, toggleClubStatus, getClubById, updateClub, completeClubProfile, getMyClubProfile, updateMyClub };

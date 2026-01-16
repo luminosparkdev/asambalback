@@ -1,6 +1,74 @@
 const { db } = require("../config/firebase");
 const { createAuthUserIfNotExists } = require("../utils/firebaseAuth");
 
+const serializeTimestamps = (data) => {
+  const result = {};
+  for (const key in data) {
+    if (data[key]?.toDate) {
+      result[key] = data[key].toDate(); 
+    } else {
+      result[key] = data[key];
+    }
+  }
+  return result;
+};
+
+const getMyAsambalProfile = async (req, res) => {
+  try {
+    const snapshot = await db
+      .collection("usuarios")
+      .where("role", "==", "admin_asambal")
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) return res.status(404).json({ message: "Perfil ASAMBAL no encontrado" });
+
+    const doc = snapshot.docs[0];
+    const data = serializeTimestamps(doc.data());
+
+    res.json({ id: doc.id, ...data });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const updateMyAsambalProfile = async (req, res) => {
+  try {
+    const snapshot = await db
+      .collection("usuarios")
+      .where("role", "==", "admin_asambal")
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) return res.status(404).json({ message: "Perfil ASAMBAL no encontrado" });
+
+    const doc = snapshot.docs[0];
+    const currentData = doc.data();
+
+    const updatedPerfil = {
+      ...currentData.perfil,
+      ...(req.body.perfil || {}),
+    };
+
+    const dataToUpdate = {
+      perfil: updatedPerfil,
+      updatedAt: new Date(),
+    };
+
+    await db.collection("usuarios").doc(doc.id).update(dataToUpdate);
+
+    const responseData = {
+      id: doc.id,
+      ...serializeTimestamps({ ...currentData, ...dataToUpdate }),
+    };
+
+    // Devolvemos TODO el admin actualizado
+    res.json(responseData);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 const getPendingUsers = async (req, res) => {
   try {
     const usersSnap = await db
@@ -88,4 +156,4 @@ const validateUser = async (req, res) => {
   }
 };
 
-module.exports = { getPendingUsers, validateUser };
+module.exports = { getPendingUsers, validateUser, getMyAsambalProfile, updateMyAsambalProfile };

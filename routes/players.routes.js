@@ -8,13 +8,14 @@ const {
   createPlayer,
   getPlayers,
   getPlayersByCoach,
-  getPlayerByUserId,
+  getMyPlayerProfile,
   getPlayerById,
   updatePlayer,
   togglePlayerStatus,
   completePlayerProfile,
   getPendingPlayers,
   validatePlayer,
+  updateMyPlayerProfile,
 } = require("../controllers/players.controller");
 
 // ==========================
@@ -69,7 +70,14 @@ router.get(
   "/me",
   authMiddleware,
   requireRole(["jugador"]),
-  getPlayerByUserId
+  getMyPlayerProfile
+);
+
+router.put(
+  "/me",
+  authMiddleware,
+  requireRole(["jugador"]),
+  updateMyPlayerProfile
 );
 // LISTAR JUGADORES DEL PROFESOR
 router.get(

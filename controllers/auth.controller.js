@@ -36,7 +36,9 @@ const login = async (req, res) => {
     const isMatch = bcrypt.compareSync(password, userData.password);
     if (!isMatch) return res.status(400).json({ message: "Contraseña incorrecta" });
 
-    const accessToken = generateAccessToken({ email: userData.email, role: userData.role, clubId: userData.clubId || null, coachId });
+    const userDoc = userSnap.docs[0];
+
+    const accessToken = generateAccessToken({ id: userDoc.id, email: userData.email, role: userData.role, clubId: userData.clubId || null, coachId });
     const refreshToken = generateRefreshToken({ email: userData.email });
 
     res.
@@ -98,8 +100,11 @@ const refreshToken = async (req, res) => {
         coachId = profSnap.docs[0].id;
       }
     } 
+
+    const userDoc = userSnap.docs[0];
     
     const newAccessToken = generateAccessToken({
+      id: userDoc.id,
       email: user.email,
       role: user.role,
       clubId: user.clubId || null,
