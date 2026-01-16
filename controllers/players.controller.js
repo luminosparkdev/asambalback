@@ -138,7 +138,7 @@ const getPlayersByCoach = async (req, res) => {
 
 const getPlayerById = async (req, res) => {
   try {
-    const doc = await db.collection("jugadores").doc(req.params.id).get();
+    const doc = await db.collection("jugadores").doc(id).get();
 
     if (!doc.exists) {
       return res.status(404).json({ message: "Jugador no encontrado" });
@@ -168,7 +168,7 @@ const updatePlayer = async (req, res) => {
 
     const docData = snap.data();
 
-    await docRef.update({
+    const updatedData = {
       nombre: req.body.nombre ?? docData.nombre,
       apellido: req.body.apellido ?? docData.apellido,
       sexo: req.body.sexo ?? docData.sexo,
@@ -190,8 +190,21 @@ const updatePlayer = async (req, res) => {
       usoimagen: req.body.usoimagen ?? docData.usoimagen,
       horariocobro: req.body.horariocobro ?? docData.horariocobro,
       año: req.body.año ?? docData.año,
+      posicion: req.body.posicion ?? docData.posicion,
+      manohabil: req.body.manohabil ?? docData.manohabil,
+
+      tutor: {
+        nombre: req.body.tutor?.nombre ?? docData.tutor?.nombre ?? "",
+        apellido: req.body.tutor?.apellido ?? docData.tutor?.apellido ?? "",
+        dni: req.body.tutor?.dni ?? docData.tutor?.dni ?? "",
+        email: req.body.tutor?.email ?? docData.tutor?.email ?? "",
+        telefono: req.body.tutor?.telefono ?? docData.tutor?.telefono ?? "",
+      },
+
       updatedAt: new Date(),
-    });
+    };
+
+    await docRef.update(updatedData);
 
     res.json({ message: "Jugador modificado exitosamente" });
   } catch (err) {
@@ -199,6 +212,7 @@ const updatePlayer = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 const togglePlayerStatus = async (req, res) => {
   try {
