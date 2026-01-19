@@ -7,6 +7,10 @@ const {
   validateUser,
   getMyAsambalProfile,
   updateMyAsambalProfile,
+  getAllPlayersAsambal,
+  getPlayerDetailAsambal,
+  grantScholarship,
+  revokeScholarship,
 } = require("../controllers/asambal.controller");
 
 router.get("/me", 
@@ -32,6 +36,33 @@ router.patch(
   authMiddleware,
   requireRole("admin_asambal"),
   validateUser
+);
+router.get(
+  "/players",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getAllPlayersAsambal
+);
+
+router.get(
+  "/players/:id",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getPlayerDetailAsambal
+);
+
+router.post(
+  "/players/:id/grant-scholarship",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  grantScholarship
+);
+
+router.post(
+  "/players/:id/revoke-scholarship",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  revokeScholarship
 );
 
 module.exports = router;

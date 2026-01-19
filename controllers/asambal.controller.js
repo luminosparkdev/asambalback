@@ -13,6 +13,7 @@ const serializeTimestamps = (data) => {
   return result;
 };
 
+//FUNCION PARA OBTENER EL PERFIL DEL ADMIN ASAMBAL
 const getMyAsambalProfile = async (req, res) => {
   try {
     const snapshot = await db
@@ -32,6 +33,7 @@ const getMyAsambalProfile = async (req, res) => {
   }
 };
 
+//FUNCION PARA ACTUALIZAR EL PERFIL DEL ADMIN ASAMBAL
 const updateMyAsambalProfile = async (req, res) => {
   try {
     const snapshot = await db
@@ -69,6 +71,7 @@ const updateMyAsambalProfile = async (req, res) => {
   }
 };
 
+//FUNCION PARA OBTENER LOS USUARIOS PENDIENTES
 const getPendingUsers = async (req, res) => {
   try {
     const usersSnap = await db
@@ -99,6 +102,7 @@ const getPendingUsers = async (req, res) => {
   }
 };
 
+//FUNCION PARA VALIDAR USUARIOS
 const validateUser = async (req, res) => {
   try {
     const { userId, action } = req.body;
@@ -156,4 +160,92 @@ const validateUser = async (req, res) => {
   }
 };
 
-module.exports = { getPendingUsers, validateUser, getMyAsambalProfile, updateMyAsambalProfile };
+//FUNCION PARA CONSULTAR TODOS LOS JUGADORES
+const getAllPlayersAsambal = async (req, res) => {
+  try {
+    const snapshot = await db.collection("jugadores").get();
+
+    const players = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...serializeTimestamps(doc.data()),
+    }));
+
+    res.json(players);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+//FUNCION PARA CONSULTAR JUGADOR POR ID
+const getPlayerDetailAsambal = async (req, res) => {
+  try {
+    const doc = await db.collection("jugadores").doc(req.params.id).get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Jugador no encontrado" });
+    }
+
+    res.json({
+      id: doc.id,
+      ...serializeTimestamps(doc.data()),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+//FUNCION PARA BECAR JUGADORES
+const grantScholarship = async (req, res) => {
+  try {
+    const ref = db.collection("jugadores").doc(req.params.id);
+    const snap = await ref.get();
+
+    if (!snap.exists) {
+      return res.status(404).json({ message: "Jugador no encontrado" });
+    }
+
+    await ref.update({
+      becado: true,
+      habilitadoParaJugar: true,
+      motivoInhabilitacion: null,
+      fechaHabilitacion: new Date(),
+      updatedAt: new Date(),
+    });
+
+    res.json({ message: "Jugador becado y habilitado correctamente" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+//FUNCION PARA QUITAR BECA A JUGADOR
+const revokeScholarship = async (req, res) => {
+  try {
+    const ref = db.collection("jugadores").doc(req.params.id);
+    const snap = await ref.get();
+
+    if (!snap.exists) {
+      return res.status(404).json({ message: "Jugador no encontrado" });
+    }
+
+    await ref.update({
+      becado: false,
+      habilitadoParaJugar: false,
+      motivoInhabilitacion: "EMPADRONAMIENTO_PENDIENTE",
+      fechaHabilitacion: null,
+      updatedAt: new Date(),
+    });
+
+    res.json({ message: "Beca removida correctamente" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+module.exports = { getPendingUsers, validateUser, getMyAsambalProfile, updateMyAsambalProfile, getAllPlayersAsambal, getPlayerDetailAsambal, grantScholarship, revokeScholarship };

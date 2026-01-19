@@ -52,7 +52,7 @@ const createPlayer = async (req, res) => {
       return res.status(400).json({ message: "Profesor no encontrado" });
     }
 
-    const coachId = profSnapshot.docs[0].id;
+    const coachId = profSnapshot.docs[0].id;    
 
     // Verificar que no exista ya jugador con mismo email
     const existing = await db
@@ -87,6 +87,11 @@ const createPlayer = async (req, res) => {
         apellido,
         email,
         categoria,
+        habilitadoParaJugar: false,
+        motivoInhabilitacion: "EMPADRONAMIENTO_PENDIENTE",
+        becado: false,
+        fechaHabilitacion: null,
+        clubName: req.user.nombreClub,
         clubId: req.user.clubId,
         coachId,
         userId: userRef.id,

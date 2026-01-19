@@ -54,6 +54,7 @@ const createProfesor = async (req, res) => {
             email,
             categoria,
             clubId: req.user.clubId,
+            clubName: req.user.nombreClub,
             userId: userRef.id,
             status: "INCOMPLETO",
             createdAt: new Date(),
