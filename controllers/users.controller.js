@@ -1,3 +1,4 @@
+
 const { db } = require("../config/firebase");
 const crypto = require("crypto");
 const { sendActivationEmail } = require("../utils/mailer");

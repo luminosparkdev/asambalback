@@ -7,6 +7,9 @@ const requireRole = require("../middlewares/requireRole.middleware");
 
 const {
   createProfesor,
+  requestJoinCoach,
+  getMyCoachRequests,
+  respondCoachRequest,  
   getProfesores,
   getProfesorById,
   updateProfesor,
@@ -14,7 +17,7 @@ const {
   validateCoach,
   completeProfesorProfile,
   getPendingCoaches,
-  updateMyCoachProfile    
+  updateMyCoachProfile, 
 } = require("../controllers/coaches.controller");
 
 router.get(
@@ -36,6 +39,27 @@ router.post(
   authMiddleware,
   requireRole("admin_club"),
   createProfesor
+);
+
+router.post(
+  "/request-join",
+  authMiddleware,
+  requireRole("admin_club"),
+  requestJoinCoach
+);
+
+router.get(
+  "/my-requests",
+  authMiddleware,
+  requireRole("profesor"),
+  getMyCoachRequests
+);
+
+router.patch(
+  "/requests/:id/respond",
+  authMiddleware,
+  requireRole("profesor"),
+  respondCoachRequest
 );
 
 router.get(
@@ -82,10 +106,10 @@ router.patch(
 );
 
 router.post(
-    "/complete-profile", 
-    authMiddleware,
-    requireRole("profesor"),
-    completeProfesorProfile
+  "/complete-profile",
+  authMiddleware,
+  requireRole("profesor"),
+  completeProfesorProfile
 );
 
 module.exports = router;

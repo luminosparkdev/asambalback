@@ -1,3 +1,4 @@
+
 const { db } = require("../config/firebase");
 const crypto = require("crypto");
 const { sendActivationEmail } = require("../utils/mailer");
@@ -9,9 +10,15 @@ const generateActivationToken = () =>
 // CREAR PROFESOR y USUARIO PROFESOR
 const createProfesor = async (req, res) => {
   try {
-    const { nombre, apellido, email, categoria } = req.body;
+    const { nombre, apellido, email, categorias } = req.body;
 
-    if (!nombre || !apellido || !email || !categoria) {
+    if (
+      !nombre?.trim() ||
+      !apellido?.trim() ||
+      !email?.trim() ||
+      !Array.isArray(categorias) ||
+      categorias.length === 0
+    ) {
       return res.status(400).json({ message: "Faltan datos" });
     }
 
@@ -19,14 +26,18 @@ const createProfesor = async (req, res) => {
       return res.status(400).json({ message: "Usuario sin club asignado" });
     }
 
-    // CHEQUEAMOS USUARIO EXISTENTE
     const existing = await db
       .collection("profesores")
       .where("email", "==", email)
       .get();
 
     if (!existing.empty) {
-      return res.status(400).json({ message: "El profesor ya existe" });
+      const doc = existing.docs[0];
+      return res.status(200).json({
+        code: "PROFESOR_EXISTENTE",
+        profesorId: doc.id,
+        message: "El profesor ya existe en el sistema",
+      });
     }
 
     const activationToken = generateActivationToken();
@@ -34,32 +45,35 @@ const createProfesor = async (req, res) => {
     const userRef = db.collection("usuarios").doc();
     const coachRef = db.collection("profesores").doc(userRef.id);
 
-    await db.runTransaction(async (tx) =>{
-        //USUARIO
-        tx.set(userRef, {
-            email,
-            role: "profesor",
-            clubId: req.user.clubId,
-            status: "INCOMPLETO",
-            activationToken,
-            createdBy: req.user.email,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        });
+    const now = new Date();
 
-        //PERFIL PROFESOR
-        tx.set(coachRef, {
-            nombre,
-            apellido,
-            email,
-            categoria,
+    await db.runTransaction(async (tx) => {
+      tx.set(userRef, {
+        email,
+        role: "profesor",
+        status: "INCOMPLETO",
+        activationToken,
+        createdBy: req.user.email,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      tx.set(coachRef, {
+        nombre,
+        apellido,
+        email,
+        userId: userRef.id,
+        clubs: [
+          {
             clubId: req.user.clubId,
-            clubName: req.user.nombreClub,
-            userId: userRef.id,
+            nombreClub: req.user.nombreClub,
+            categorias,
             status: "INCOMPLETO",
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        });
+          },
+        ],
+        createdAt: now,
+        updatedAt: now,
+      });
     });
 
     await sendActivationEmail(email, activationToken, email);
@@ -70,22 +84,191 @@ const createProfesor = async (req, res) => {
   }
 };
 
+// SOLICITAR UNIRSE A UN CLUB
+const requestJoinCoach = async (req, res) => {
+  try {
+    const { email, categorias } = req.body;
+    const { clubId, nombreClub } = req.user;
+
+    if (!email || !Array.isArray(categorias) || categorias.length === 0) {
+      return res.status(400).json({ message: "Datos incompletos" });
+    }
+
+    const coachSnap = await db
+      .collection("profesores")
+      .where("email", "==", email)
+      .limit(1)
+      .get();
+
+    if (coachSnap.empty) {
+      return res.status(404).json({ message: "Profesor no encontrado" });
+    }
+
+    const coachDoc = coachSnap.docs[0];
+    const coachData = coachDoc.data();
+
+    // ¿Ya pertenece al club?
+    const alreadyInClub = coachData.clubs?.some(
+      (c) => c.clubId === clubId
+    );
+
+    if (alreadyInClub) {
+      return res.status(400).json({
+        message: "El profesor ya pertenece a este club",
+      });
+    }
+
+    // ¿Ya hay solicitud pendiente?
+    const existingRequest = await db
+      .collection("coachRequests")
+      .where("profesorId", "==", coachDoc.id)
+      .where("clubId", "==", clubId)
+      .where("status", "==", "PENDIENTE")
+      .get();
+
+    if (!existingRequest.empty) {
+      return res.status(400).json({
+        message: "Ya existe una solicitud pendiente",
+      });
+    }
+
+    await db.collection("coachRequests").add({
+      profesorId: coachDoc.id,
+      emailProfesor: email,
+      clubId,
+      nombreClub,
+      categorias,
+      status: "PENDIENTE",
+      createdAt: new Date(),
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+//SOLICITUDES PENDIENTES PARA EL PROFESOR
+const getMyCoachRequests = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const coachSnap = await db
+      .collection("profesores")
+      .where("userId", "==", userId)
+      .limit(1)
+      .get();
+
+    if (coachSnap.empty) {
+      return res.status(404).json({ message: "Profesor no encontrado" });
+    }
+
+    const coachId = coachSnap.docs[0].id;
+
+    const snap = await db
+      .collection("coachRequests")
+      .where("profesorId", "==", coachId)
+      .where("status", "==", "PENDIENTE")
+      .get();
+
+    const data = snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+    }));
+
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+//RESPONDER SOLICITUD DE UNIRSE A UN CLUB
+const respondCoachRequest = async (req, res) => {
+  try {
+    const { action } = req.body;
+    const requestRef = db.collection("coachRequests").doc(req.params.id);
+
+    if (!["ACCEPT", "REJECT"].includes(action)) {
+      return res.status(400).json({ message: "Acción inválida" });
+    }
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(requestRef);
+      if (!snap.exists) throw new Error("Solicitud no encontrada");
+
+      const reqData = snap.data();
+      if (reqData.status !== "PENDIENTE") {
+        throw new Error("Solicitud ya procesada");
+      }
+
+      if (action === "ACCEPT") {
+        const coachRef = db.collection("profesores").doc(reqData.profesorId);
+        const coachSnap = await tx.get(coachRef);
+
+        const clubs = coachSnap.data().clubs || [];
+
+        clubs.push({
+          clubId: reqData.clubId,
+          nombreClub: reqData.nombreClub,
+          categorias: reqData.categorias,
+          status: "ACTIVO",
+        });
+
+        tx.update(coachRef, {
+          clubs,
+          updatedAt: new Date(),
+        });
+      }
+
+      tx.update(requestRef, {
+        status: action === "ACCEPT" ? "ACEPTADA" : "RECHAZADA",
+        respondedAt: new Date(),
+      });
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
 // LISTAR PROFESORES DEL CLUB
 const getProfesores = async (req, res) => {
   try {
-    const snapshot = await db
-      .collection("profesores")
-      .where("clubId", "==", req.user.clubId)
-      .get();
+    const clubId = req.user.clubId;
 
-    const profesores = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-
-    if (!req.user.clubId) {
+    if (!clubId) {
       return res.status(400).json({ message: "Usuario sin club asignado" });
     }
+
+    const snap = await db.collection("profesores").get();
+
+    const profesores = snap.docs
+      .map(doc => {
+        const data = doc.data();
+
+        const clubData = data.clubs?.find(
+          c => c.clubId === clubId
+        );
+
+        if (!clubData) return null;
+
+        return {
+          id: doc.id,
+          nombre: data.nombre,
+          apellido: data.apellido,
+          email: data.email,
+          telefono: data.telefono,
+          dni: data.dni,
+          enea: data.enea,
+
+          // 🔑 datos del club
+          status: clubData.status,
+          categorias: clubData.categorias,
+        };
+      })
+      .filter(Boolean);
 
     res.json(profesores);
   } catch (err) {
@@ -93,10 +276,12 @@ const getProfesores = async (req, res) => {
   }
 };
 
+
 // OBTENER PROFESOR POR ID
 const getProfesorById = async (req, res) => {
   try {
     const { id } = req.params;
+    const clubId = req.user.clubId;
 
     const doc = await db.collection("profesores").doc(id).get();
 
@@ -104,46 +289,75 @@ const getProfesorById = async (req, res) => {
       return res.status(404).json({ message: "Profesor no encontrado" });
     }
 
-    if (doc.data().clubId !== req.user.clubId) {
+    const data = doc.data();
+    const club = data.clubs?.find(c => c.clubId === clubId);
+
+    if (!club) {
       return res.status(403).json({ message: "Acceso denegado" });
     }
 
-    res.json({ id: doc.id, ...doc.data() });
+    res.json({
+      id: doc.id,
+      nombre: data.nombre,
+      apellido: data.apellido,
+      email: data.email,
+      telefono: data.telefono,
+      domicilio: data.domicilio,
+      enea: data.enea,
+      dni: data.dni,
+
+      // datos dependientes del club
+      status: club.status,
+      categorias: club.categorias,
+
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
+
 // EDITAR PROFESOR
 const updateProfesor = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, apellido, dni, email, telefono, domicilio, categoria, enea } = req.body;
+    const clubId = req.user.clubId;
+    const { categorias } = req.body;
+
+    if (!categorias) {
+      return res.status(400).json({ message: "No hay datos para actualizar" });
+    }
 
     const ref = db.collection("profesores").doc(id);
-    const snap = await ref.get();
 
-    if (!snap.exists) {
-      return res.status(404).json({ message: "Profesor no encontrado" });
-    }
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
 
-    if (snap.data().clubId !== req.user.clubId) {
-      return res.status(403).json({ message: "Acceso denegado" });
-    }
-
-    const allowedFields = ["nombre", "apellido", "dni", "telefono", "domicilio", "categoria", "enea"];
-
-    const dataToUpdate = {};
-
-    allowedFields.forEach(field => {
-      if (req.body[field] !== undefined) {
-        dataToUpdate[field] = req.body[field];
+      if (!snap.exists) {
+        throw new Error("Profesor no encontrado");
       }
+
+      const data = snap.data();
+      const clubs = data.clubs || [];
+
+      const clubIndex = clubs.findIndex(c => c.clubId === clubId);
+      if (clubIndex === -1) {
+        throw new Error("Acceso denegado");
+      }
+
+      clubs[clubIndex] = {
+        ...clubs[clubIndex],
+        categorias,
+        updatedAt: new Date(),
+      };
+
+      tx.update(ref, {
+        clubs,
+        updatedAt: new Date(),
+      });
     });
-
-    dataToUpdate.updatedAt = new Date();
-
-    await ref.update(dataToUpdate);
 
     res.json({ success: true });
   } catch (err) {
@@ -155,6 +369,7 @@ const updateProfesor = async (req, res) => {
 const toggleProfesorStatus = async (req, res) => {
   try {
     const { id } = req.params;
+    const clubId = req.user.clubId;
 
     const coachRef = db.collection("profesores").doc(id);
 
@@ -167,19 +382,35 @@ const toggleProfesorStatus = async (req, res) => {
         throw new Error("Profesor no encontrado");
       }
 
-      const currentStatus = coachSnap.data().status;
+      const data = coachSnap.data();
+      const clubs = data.clubs || [];
+
+      const clubIndex = clubs.findIndex(c => c.clubId === clubId);
+
+      if (clubIndex === -1) {
+        throw new Error("El profesor no pertenece a este club");
+      }
+
+      const currentStatus = clubs[clubIndex].status;
 
       if (!["ACTIVO", "INACTIVO"].includes(currentStatus)) {
-        throw new Error(`No se puede cambiar el estado del profesor desde ${currentStatus}`);
+        throw new Error(
+          `No se puede cambiar el estado del profesor desde ${currentStatus}`
+        );
       }
 
       newStatus = currentStatus === "ACTIVO" ? "INACTIVO" : "ACTIVO";
 
-      tx.update(coachRef, {
+      clubs[clubIndex] = {
+        ...clubs[clubIndex],
         status: newStatus,
+      };
+
+      tx.update(coachRef, {
+        clubs,
         updatedAt: new Date(),
       });
-    });    
+    });
 
     res.json({ success: true, status: newStatus });
   } catch (err) {
@@ -189,42 +420,48 @@ const toggleProfesorStatus = async (req, res) => {
 
 const completeProfesorProfile = async (req, res) => {
   try {
-    const {
-      telefono,
-      domicilio,
-      enea,
-    } = req.body;
-
+    const { telefono, domicilio, enea, dni } = req.body;
     const userId = req.user.id;
 
-    const snap = await db
-    .collection("profesores")
-    .where("userId", "==", userId)
-    .limit(1)
-    .get();
-
-    if (snap.empty) {
-      return res.status(404).json({ message: "Profesor no encontrado" });
+    if (
+      !telefono?.trim() ||
+      !domicilio?.trim() ||
+      typeof enea !== "number" ||
+      Number.isNaN(enea) ||
+      !dni?.trim()
+    ) {
+      return res.status(400).json({ message: "Datos incompletos" });
     }
 
-    const coachDoc = snap.docs[0];
-    const coachRef = coachDoc.ref;
-
-    if (coachDoc.data().clubId !== req.user.clubId) {
-      return res.status(403).json({ message: "Acceso denegado" });
-    }
+    const userRef = db.collection("usuarios").doc(userId);
+    const coachRef = db.collection("profesores").doc(userId);
 
     await db.runTransaction(async (tx) => {
-      tx.update(coachRef, {
-        telefono,
-        domicilio,
-        enea,
+      const userSnap = await tx.get(userRef);
+      const coachSnap = await tx.get(coachRef);
+
+      if (!userSnap.exists || !coachSnap.exists) {
+        throw new Error("Profesor no encontrado");
+      }
+
+      const coachData = coachSnap.data();
+
+      const updatedClubs = coachData.clubs.map((club) => ({
+        ...club,
+        status: "PENDIENTE",
+      }));
+
+      tx.update(userRef, {
         status: "PENDIENTE",
         updatedAt: new Date(),
       });
 
-      tx.update(db.collection("usuarios").doc(userId), {
-        status: "PENDIENTE",
+      tx.update(coachRef, {
+        telefono,
+        domicilio,
+        enea,
+        dni,
+        clubs: updatedClubs,
         updatedAt: new Date(),
       });
     });
@@ -237,26 +474,38 @@ const completeProfesorProfile = async (req, res) => {
 
 const getPendingCoaches = async (req, res) => {
   try {
-    const snap = await db
-      .collection("profesores")
-      .where("clubId", "==", req.user.clubId)
-      .where("status", "==", "PENDIENTE")
-      .get();
+    const clubId = req.user.clubId;
 
-    const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const snap = await db.collection("profesores").get();
+
+    const data = snap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(profesor =>
+        profesor.clubs?.some(
+          club =>
+            club.clubId === clubId &&
+            club.status === "PENDIENTE"
+        )
+      );
+
     res.json(data);
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
+
 const validateCoach = async (req, res) => {
   try {
     const { coachId } = req.params;
-    const { action } = req.body;
+    const { action, clubId } = req.body;
 
     if (!["APPROVE", "REJECT"].includes(action)) {
       return res.status(400).json({ message: "Acción inválida" });
+    }
+
+    if (!clubId) {
+      return res.status(400).json({ message: "ClubId requerido" });
     }
 
     const coachRef = db.collection("profesores").doc(coachId);
@@ -268,29 +517,44 @@ const validateCoach = async (req, res) => {
 
     const coachData = coachSnap.data();
 
+    const clubIndex = coachData.clubs?.findIndex(
+      (c) => c.clubId === clubId
+    );
+
+    if (clubIndex === -1) {
+      return res.status(400).json({
+        message: "El profesor no pertenece a este club",
+      });
+    }
+
     const newStatus = action === "APPROVE" ? "ACTIVO" : "RECHAZADO";
 
-    const userRef = db.collection("usuarios").doc(coachData.userId);
-    const userSnap = await userRef.get();
+    const updatedClubs = [...coachData.clubs];
+    updatedClubs[clubIndex] = {
+      ...updatedClubs[clubIndex],
+      status: newStatus,
+    };
 
-    console.log("userId:", coachData.userId);
-    console.log("usuario existe:", userSnap.exists)
+    const userRef = db.collection("usuarios").doc(coachData.userId);
 
     await db.runTransaction(async (tx) => {
       tx.update(coachRef, {
-        status: newStatus,
+        clubs: updatedClubs,
         updatedAt: new Date(),
       });
 
-      const userRef = db.collection("usuarios").doc(coachData.userId);
-
-      tx.update(userRef, {
-        status: newStatus,
-        updatedAt: new Date(),
-      });
+      if (action === "APPROVE") {
+        tx.update(userRef, {
+          status: "ACTIVO",
+          updatedAt: new Date(),
+        });
+      }
     });
 
-    res.json({ success: true, status: newStatus });
+    res.json({
+      success: true,
+      clubStatus: newStatus,
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -349,6 +613,9 @@ const updateMyCoachProfile = async (req, res) => {
 
 module.exports = {
   createProfesor,
+  requestJoinCoach,
+  getMyCoachRequests,
+  respondCoachRequest,
   getProfesores,
   getProfesorById,
   updateProfesor,
