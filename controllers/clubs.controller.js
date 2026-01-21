@@ -9,9 +9,6 @@ const generateActivationToken = () =>
 // CREAMOS CLUB CON ADMIN
 const createClubWithAdmin = async (req, res) => {
   try {
-    if (req.user.role !== "admin_asambal") {
-      return res.status(403).json({ message: "Acceso denegado" });
-    }
 
     const { clubName, city, adminEmail } = req.body;
 
@@ -52,7 +49,7 @@ const createClubWithAdmin = async (req, res) => {
 
       tx.set(userRef, {
         email: adminEmail,
-        role: "admin_club",
+        roles: ["admin_club"],
         clubId: clubRef.id,
         status: "INCOMPLETO",
         activationToken,
@@ -232,19 +229,22 @@ const updateClub = async (req, res) => {
 const completeClubProfile = async (req, res) => {
   try {
     const { clubId } = req.params;
-    const { responsable, sede, telefono, canchas, canchasAlternativas } = req.body;
+    const { activationToken, responsable, sede, telefono, canchas, canchasAlternativas } = req.body;
 
-    if (clubId !== req.user.clubId) {
-      return res.status(403).json({ message: "Acceso denegado" });
+    const userSnap = await db.collection("usuarios")
+    .where("activationToken", "==", activationToken)
+    .where("clubId", "==", clubId)
+    .limit(1)
+    .get();
+
+    if (userSnap.empty) {
+      return res.status(403).json({ message: "Token inválido" });
     }
+
+    const userRef = userSnap.docs[0].ref;
 
     await db.runTransaction(async (tx) => {
       const clubRef = db.collection("clubes").doc(clubId);
-      const clubSnap = await tx.get(clubRef);
-
-      if (!clubSnap.exists) {
-        throw new Error("Club no encontrado");
-      }
 
       tx.update(clubRef, {
         responsable,
@@ -256,19 +256,11 @@ const completeClubProfile = async (req, res) => {
         updatedAt: new Date(),
       });
 
-      const userSnap = await db
-        .collection("usuarios")
-        .where("clubId", "==", clubId)
-        .where("role", "==", "admin_club")
-        .limit(1)
-        .get();
-
-      if (!userSnap.empty) {
-        tx.update(userSnap.docs[0].ref, {
-          status: "PENDIENTE",
-          updatedAt: new Date(),
-        });
-      }
+      tx.update(userRef, {
+        status: "PENDIENTE",
+        activationToken: null,
+        updatedAt: new Date(),
+      });
     });
 
     res.json({ success: true });
@@ -331,5 +323,106 @@ const updateMyClub = async (req, res) => {
   }
 };
 
+const validateRoleInClub = async (req, res) => {
+  try {
+    const { userId, role, action } = req.body; // role = "profesor" | "jugador"
 
-module.exports = { createClubWithAdmin, getClubs, toggleClubStatus, getClubById, updateClub, completeClubProfile, getMyClubProfile, updateMyClub };
+    const userRef = db.collection("usuarios").doc(userId);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) return res.status(404).json({ message: "Usuario no encontrado" });
+
+    const userData = userSnap.data();
+
+    if (!userData.roles?.[role]) return res.status(400).json({ message: `Usuario no tiene rol ${role}` });
+
+    const newEstado = action === "APPROVE" ? "ACTIVO" : "RECHAZADO";
+
+    // Actualizamos estado en rol dentro de usuarios
+    const updatedRoles = { ...userData.roles };
+    if (role === "profesor") {
+      updatedRoles.profesor.estado = newEstado;
+    } else if (role === "jugador") {
+      // Solo un club activo a la vez
+      updatedRoles.jugador.forEach(j => {
+        if (j.clubId === req.user.clubId) j.estado = newEstado;
+      });
+    }
+
+    await userRef.update({ roles: updatedRoles, updatedAt: new Date() });
+
+    // Actualizamos documento en colección correspondiente
+    if (role === "profesor") {
+      const profRef = db.collection("profesores").doc(userId);
+      await profRef.update({
+        estado: newEstado,
+        updatedAt: new Date(),
+      });
+    } else if (role === "jugador") {
+      const playerRef = db.collection("jugadores").doc(userId);
+      const playerData = (await playerRef.get()).data() || {};
+      await playerRef.update({
+        estado: newEstado,
+        updatedAt: new Date(),
+      });
+    }
+
+    res.json({ success: true, estado: newEstado });
+  } catch (err) {
+    console.error("❌ ERROR validateRoleInClub (Admin Club):", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const getPendingUsersInClub = async (req, res) => {
+  try {
+    const clubId = req.user.clubId;
+
+    // Traemos todos los usuarios que tengan rol profesor o jugador en este club y estado PENDIENTE
+    const snapshot = await db.collection("usuarios")
+      .where("status", "==", "PENDIENTE")
+      .get();
+
+    const pendingUsers = [];
+
+    snapshot.docs.forEach(doc => {
+      const data = doc.data();
+      const roles = data.roles || {};
+
+      // Profesores pendientes en este club
+      if (roles.profesor?.clubes?.includes(clubId) && roles.profesor.estado === "PENDIENTE") {
+        pendingUsers.push({
+          id: doc.id,
+          email: data.email,
+          role: "profesor",
+          estado: "PENDIENTE",
+          clubes: roles.profesor.clubes,
+          categorias: roles.profesor.categorias,
+        });
+      }
+
+      // Jugadores pendientes en este club
+      if (roles.jugador) {
+        roles.jugador.forEach(j => {
+          if (j.clubId === clubId && j.estado === "PENDIENTE") {
+            pendingUsers.push({
+              id: doc.id,
+              email: data.email,
+              role: "jugador",
+              estado: "PENDIENTE",
+              clubId: j.clubId,
+              categoria: j.categoria,
+            });
+          }
+        });
+      }
+    });
+
+    res.json(pendingUsers);
+  } catch (err) {
+    console.error("❌ ERROR getPendingUsersInClub:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+module.exports = { createClubWithAdmin, getClubs, toggleClubStatus, getClubById, updateClub, completeClubProfile, getMyClubProfile, updateMyClub, validateRoleInClub, getPendingUsersInClub };

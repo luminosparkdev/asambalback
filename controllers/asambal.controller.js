@@ -18,7 +18,7 @@ const getMyAsambalProfile = async (req, res) => {
   try {
     const snapshot = await db
       .collection("usuarios")
-      .where("role", "==", "admin_asambal")
+      .where("roles", "array-contains", "admin_asambal")
       .limit(1)
       .get();
 
@@ -38,7 +38,7 @@ const updateMyAsambalProfile = async (req, res) => {
   try {
     const snapshot = await db
       .collection("usuarios")
-      .where("role", "==", "admin_asambal")
+      .where("roles", "array-contains", "admin_asambal")
       .limit(1)
       .get();
 
@@ -84,20 +84,40 @@ const getPendingUsers = async (req, res) => {
     for (const doc of usersSnap.docs) {
       const user = doc.data();
 
-      if (user.role === "admin_club") {
-        const clubSnap = await db.collection("clubes").doc(user.clubId).get();
-
-        result.push({
-          userId: doc.id,
-          email: user.email,
-          role: user.role,
-          club: clubSnap.exists ? clubSnap.data() : null,
-        });
+      // --- Normalizar roles ---
+      let rolesArray = [];
+      if (typeof user.roles === "string") {
+        rolesArray = [user.roles];
+      } else if (Array.isArray(user.roles)) {
+        rolesArray = user.roles;
+      } else if (typeof user.roles === "object" && user.roles !== null) {
+        rolesArray = Object.values(user.roles);
       }
+
+      // --- Filtrar solo admin_club ---
+      if (!rolesArray.includes("admin_club")) continue;
+
+      // --- Traer club ---
+      let club = null;
+      if (user.clubId) {
+        const clubSnap = await db.collection("clubes").doc(user.clubId).get();
+        if (clubSnap.exists) {
+          club = clubSnap.data();
+        }
+      }
+
+      // --- Push final ---
+      result.push({
+        userId: doc.id,
+        email: user.email,
+        role: "admin_club",
+        club,
+      });
     }
 
     res.json(result);
   } catch (err) {
+    console.error("❌ ERROR getPendingUsers:", err);
     res.status(500).json({ message: err.message });
   }
 };
@@ -105,57 +125,41 @@ const getPendingUsers = async (req, res) => {
 //FUNCION PARA VALIDAR USUARIOS
 const validateUser = async (req, res) => {
   try {
-    const { userId, action } = req.body;
-
+    const { userId, action } = req.body; // action = "APPROVE" | "REJECT"
     const userRef = db.collection("usuarios").doc(userId);
     const userSnap = await userRef.get();
 
-    if (!userSnap.exists) {
-      return res.status(404).json({ message: "Usuario no encontrado" });
-    }
+    if (!userSnap.exists) return res.status(404).json({ message: "Usuario no encontrado" });
 
     const userData = userSnap.data();
-    
-    if (!userData.clubId) {
-      return res.status(400).json({ message: "El usuario no tiene club asociado" });
-    }
-
-    const clubRef = db.collection("clubes").doc(userData.clubId);
-    const clubSnap = await clubRef.get();
-
-    if (!clubSnap.exists) {
-      return res.status(404).json({ message: "Club no encontrado" });
-    }
-
     const newStatus = action === "APPROVE" ? "ACTIVO" : "RECHAZADO";
 
-    await db.runTransaction(async (tx) => {
-      tx.update(userRef, { 
-        status: newStatus,
-        updatedAt: new Date(),
-      });
-
-      if (action === "APPROVE") {
-        tx.update(clubRef, { 
-          status: newStatus,
-          updatedAt: new Date(),
-        });
-      }
-
-      if (action === "REJECT") {
-        tx.update(clubRef, { 
-          status: "RECHAZADO",
-          updateAt: new Date(),
-        });
-      }
-    });
-
-    if (action === "APPROVE") {
-      await createAuthUserIfNotExists(userData.email);
+    // --- Normalizar roles ---
+    let rolesArray = [];
+    if (typeof userData.roles === "string") {
+      rolesArray = [userData.roles];
+    } else if (Array.isArray(userData.roles)) {
+      rolesArray = userData.roles;
+    } else if (typeof userData.roles === "object" && userData.roles !== null) {
+      rolesArray = Object.values(userData.roles);
     }
+
+    await db.runTransaction(async tx => {
+      tx.update(userRef, { status: newStatus, updatedAt: new Date() });
+
+      // Si es admin_club, sincronizamos club
+      if (rolesArray.includes("admin_club") && userData.clubId) {
+        const clubRef = db.collection("clubes").doc(userData.clubId);
+        tx.update(clubRef, { status: newStatus, updatedAt: new Date() });
+      }
+
+      // Crear usuario en Firebase Auth si aprobó
+      if (action === "APPROVE") await createAuthUserIfNotExists(userData.email);
+    });
 
     res.json({ success: true, status: newStatus });
   } catch (err) {
+    console.error("❌ ERROR validateUser (Asambal):", err);
     res.status(500).json({ message: err.message });
   }
 };

@@ -1,84 +1,138 @@
-
 const { db } = require("../config/firebase");
 const crypto = require("crypto");
 const { sendActivationEmail } = require("../utils/mailer");
+const { createAuthUserIfNotExists } = require("../utils/firebaseAuth");
 
-//GENERAMOS TOKEN
+// Generamos token de activación
 const generateActivationToken = () => crypto.randomBytes(20).toString("hex");
 
-//CREAMOS USUARIO
+// Crear usuario general (admin_club, profesor, jugador)
 const createUser = async (req, res) => {
-
-  const allowedRoleCreation = {
-    admin_asambal: ["admin_club"],
-    admin_club: ["profesor"],
-    profesor: ["jugador"],
-  };
-
-  const creatorRole = req.user.role;
-  const { role: newUserRole } = req.body;
-
-  if (
-    !allowedRoleCreation[creatorRole] ||
-    !allowedRoleCreation[creatorRole].includes(newUserRole)
-  ) {
-    return res.status(403).json({
-      message: "No tenés permisos para crear este tipo de usuario",
-    });
-  }
-
   try {
-    const { email, role } = req.body;
+    const allowedRoleCreation = {
+      admin_asambal: ["admin_club"],
+      admin_club: ["profesor", "jugador"],
+      profesor: ["jugador"],
+    };
 
-    if (!email || !role) return res.status(400).json({ message: "Faltan datos" });
+    const creatorRole = req.user.role; // rol del que crea
+    const { role: newUserRole, clubId, categoria } = req.body;
 
-    //VERIFICAMOS SI YA EXISTE
-    const existing = await db.collection("usuarios").where("email", "==", email).get();
-    if (!existing.empty) return res.status(400).json({ message: "Usuario ya existe" });
+    // Validamos permisos
+    if (!allowedRoleCreation[creatorRole] || !allowedRoleCreation[creatorRole].includes(newUserRole)) {
+      return res.status(403).json({ message: "No tenés permisos para crear este tipo de usuario" });
+    }
 
+    // Validamos datos obligatorios
+    if (!newUserRole || (newUserRole !== "admin_club" && !clubId)) {
+      return res.status(400).json({ message: "Faltan datos obligatorios" });
+    }
+
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Falta email" });
+
+    // Verificamos si ya existe
+    const existingSnap = await db.collection("usuarios").where("email", "==", email).limit(1).get();
     const activationToken = generateActivationToken();
 
-    //ASIGNAMOS CLUBID
+    if (existingSnap.empty) {
+      // Usuario nuevo
+      const roles = {};
 
-    let clubId = null;
+      if (newUserRole === "jugador") {
+        roles.jugador = [{ clubId, categoria, estado: "PENDIENTE" }];
+      } else if (newUserRole === "profesor") {
+        roles.profesor = { clubes: [clubId], categorias: [categoria], estado: "PENDIENTE" };
+      } else if (newUserRole === "admin_club") {
+        roles.admin_club = { estado: "PENDIENTE" };
+      }
 
-    if (creatorRole === "admin_asambal") {
-      clubId = req.body.clubId;
-      if (!clubId) {
-        return res.status(400).json({
-          message: "El clubId es obligatorio para este tipo de usuario",
+      // Guardamos usuario
+      const userRef = db.collection("usuarios").doc();
+      await userRef.set({
+        email,
+        roles,
+        status: "INCOMPLETO",
+        activationToken,
+        createdBy: req.user?.email || "LuminoSpark",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Creamos documento en coleccion correspondiente
+      if (newUserRole === "profesor") {
+        await db.collection("profesores").doc(userRef.id).set({
+          email,
+          clubes: [clubId],
+          categorias: [categoria],
+          createdBy: req.user?.email,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      } else if (newUserRole === "jugador") {
+        await db.collection("jugadores").doc(userRef.id).set({
+          email,
+          clubId,
+          categoria,
+          createdBy: req.user?.email,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         });
       }
+
+      // Creamos usuario en Firebase Auth con password vacío
+      await createAuthUserIfNotExists(email);
+
+      // Enviamos mail de activación
+      await sendActivationEmail(email, activationToken, email);
+
+      return res.json({ success: true, message: "Usuario creado correctamente y mail enviado" });
     }
 
-    if (creatorRole === "admin_club" || creatorRole === "profesor") {
-      clubId = req.user.clubId;
-      if (!clubId) {
-        return res.status(400).json({
-          message: "El usuario creador no tiene club asignado",
-        });
-      }
+    // Usuario ya existe → agregamos rol si corresponde
+    const userDoc = existingSnap.docs[0];
+    const userData = userDoc.data();
+    const roles = userData.roles || {};
+
+    if (roles[newUserRole]) {
+      return res.status(400).json({ message: `Usuario ya tiene rol ${newUserRole}` });
     }
 
+    // Agregamos rol nuevo
+    if (newUserRole === "jugador") {
+      roles.jugador = [{ clubId, categoria, estado: "PENDIENTE" }];
+      await db.collection("jugadores").doc(userDoc.id).set({
+        email,
+        clubId,
+        categoria,
+        createdBy: req.user?.email,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    } else if (newUserRole === "profesor") {
+      roles.profesor = { clubes: [clubId], categorias: [categoria], estado: "PENDIENTE" };
+      await db.collection("profesores").doc(userDoc.id).set({
+        email,
+        clubes: [clubId],
+        categorias: [categoria],
+        createdBy: req.user?.email,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    } else if (newUserRole === "admin_club") {
+      roles.admin_club = { estado: "PENDIENTE" };
+    }
 
-    //GUARDAMOS USUARIO
-    await db.collection("usuarios").doc().set({
-      email,
-      role,
-      active: false,
-      password: "",
-      activationToken,
-      createdBy: req.user?.email || "LuminoSpark",
-      clubId: req.user?.clubId || null,
-      createdAt: new Date(),
+    await userDoc.ref.update({
+      roles,
       updatedAt: new Date(),
     });
 
-    // ENVIO DE MAIL
     await sendActivationEmail(email, activationToken, email);
 
-    res.json({ success: true, message: "Usuario creado correctamente y mail enviado" });
+    res.json({ success: true, message: "Rol agregado correctamente y mail enviado" });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: err.message });
   }
 };

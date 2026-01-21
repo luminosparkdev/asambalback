@@ -3,7 +3,6 @@ const { db } = require("../config/firebase");
 
 const authMiddleware = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-
   if (!authHeader)
     return res.status(401).json({ message: "Token no provisto" });
 
@@ -11,16 +10,22 @@ const authMiddleware = async (req, res, next) => {
 
   try {
     const decoded = verifyAccessToken(token);
-    req.user = decoded; // { email, role, clubId, ... }
+    req.user = decoded;
 
-    if (req.user.clubId) {
-      const clubSnap = await db.collection("clubes").doc(req.user.clubId).get();
-      req.user.nombreClub = clubSnap.exists ? clubSnap.data().nombre : null;
+    // 🔥 SOLO admin_club tiene clubId
+    if (req.user.clubId && typeof req.user.clubId === "string") {
+      const clubSnap = await db
+        .collection("clubes")
+        .doc(req.user.clubId)
+        .get();
+
+      req.user.nombreClub = clubSnap.exists
+        ? clubSnap.data().nombre
+        : null;
     }
-    console.log("AUTH USER:", req.user);
-    console.log("ROLE EN TOKEN:", req.user.role);
+
     next();
-  } catch (err) {
+  } catch {
     return res.status(401).json({ message: "Token inválido o expirado" });
   }
 };

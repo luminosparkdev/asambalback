@@ -610,6 +610,49 @@ const updateMyCoachProfile = async (req, res) => {
   }
 };
 
+// Profesores aprueban/rechazan jugadores de su club
+const validatePlayersInClub = async (req, res) => {
+  try {
+    const { userId, action } = req.body; // action = "APPROVE" | "REJECT"
+    const profesorClubId = req.user.clubId;
+
+    // Buscamos usuario jugador
+    const userRef = db.collection("usuarios").doc(userId);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) return res.status(404).json({ message: "Usuario no encontrado" });
+
+    const userData = userSnap.data();
+
+    if (!userData.roles?.jugador) return res.status(400).json({ message: "Usuario no tiene rol jugador" });
+
+    // Solo podemos actualizar estado del jugador en el club del profesor
+    const jugadorRol = userData.roles.jugador.find(j => j.clubId === profesorClubId);
+    if (!jugadorRol) return res.status(400).json({ message: "El jugador no pertenece a tu club" });
+
+    const newEstado = action === "APPROVE" ? "ACTIVO" : "RECHAZADO";
+
+    // Actualizamos estado en usuarios
+    const updatedRoles = { ...userData.roles };
+    updatedRoles.jugador = updatedRoles.jugador.map(j => {
+      if (j.clubId === profesorClubId) j.estado = newEstado;
+      return j;
+    });
+
+    await userRef.update({ roles: updatedRoles, updatedAt: new Date() });
+
+    // Actualizamos estado en colección jugadores
+    const playerRef = db.collection("jugadores").doc(userId);
+    await playerRef.update({
+      estado: newEstado,
+      updatedAt: new Date(),
+    });
+
+    res.json({ success: true, estado: newEstado });
+  } catch (err) {
+    console.error("❌ ERROR validatePlayersInClub (Profesor):", err);
+    res.status(500).json({ message: err.message });
+  }
+};
 
 module.exports = {
   createProfesor,
@@ -625,4 +668,5 @@ module.exports = {
   validateCoach,
   getMyCoachProfile,
   updateMyCoachProfile,
+  validatePlayersInClub,
 };

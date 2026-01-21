@@ -22,35 +22,35 @@ const {
 // RUTAS ESPECIALES
 // ==========================
 
-// LISTAR JUGADORES PENDIENTES DE VALIDACIÓN
-router.get(
-  "/pending-players",
+// COMPLETAR PERFIL JUGADOR
+router.post(
+  "/me/complete-profile",
   authMiddleware,
-  requireRole(["profesor"]),
+  requireRole("jugador"),
+  completePlayerProfile
+);
+
+// LISTAR JUGADORES PENDIENTES DE VALIDACIÓN (solo profesor)
+router.get(
+  "/pending",
+  authMiddleware,
+  requireRole("profesor"),
   getPendingPlayers
 );
 
-// VALIDAR / RECHAZAR JUGADOR
+// VALIDAR / RECHAZAR JUGADOR (solo profesor)
 router.patch(
-  "/:id/validate-player",
+  "/:id/validate",
   authMiddleware,
-  requireRole(["profesor"]),
+  requireRole("profesor"),
   validatePlayer
-);
-
-// COMPLETAR PERFIL JUGADOR
-router.post(
-  "/complete-profile",
-  authMiddleware,
-  requireRole(["jugador"]),
-  completePlayerProfile
 );
 
 // ==========================
 // CRUD PRINCIPAL
 // ==========================
 
-// CREAR JUGADOR
+// CREAR JUGADOR (profesor o admin_club)
 router.post(
   "/",
   authMiddleware,
@@ -58,32 +58,35 @@ router.post(
   createPlayer
 );
 
-// LISTAR JUGADORES DEL CLUB
+// LISTAR TODOS LOS JUGADORES DEL CLUB (admin_club)
 router.get(
   "/",
   authMiddleware,
-  requireRole(["admin_club"]),
+  requireRole("admin_club"),
   getPlayers
 );
 
+// OBTENER PERFIL PROPIO (jugador)
 router.get(
   "/me",
   authMiddleware,
-  requireRole(["jugador"]),
+  requireRole("jugador"),
   getMyPlayerProfile
 );
 
+// EDITAR PERFIL PROPIO (jugador)
 router.put(
   "/me",
   authMiddleware,
-  requireRole(["jugador"]),
+  requireRole("jugador"),
   updateMyPlayerProfile
 );
+
 // LISTAR JUGADORES DEL PROFESOR
 router.get(
-  "/players-by-coach",
+  "/by-coach",
   authMiddleware,
-  requireRole(["profesor"]),
+  requireRole("profesor"),
   getPlayersByCoach
 );
 
@@ -95,7 +98,7 @@ router.get(
   getPlayerById
 );
 
-// EDITAR JUGADOR
+// EDITAR JUGADOR (profesor o admin_club)
 router.put(
   "/:id",
   authMiddleware,
@@ -103,7 +106,7 @@ router.put(
   updatePlayer
 );
 
-// ACTIVAR / DESACTIVAR JUGADOR
+// ACTIVAR / DESACTIVAR JUGADOR (profesor o admin_club)
 router.patch(
   "/:id/toggle",
   authMiddleware,

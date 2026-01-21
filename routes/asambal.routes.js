@@ -12,7 +12,9 @@ const {
   grantScholarship,
   revokeScholarship,
 } = require("../controllers/asambal.controller");
+const { createClubWithAdmin } = require("../controllers/clubs.controller");
 
+//PERFIL ASAMBAL
 router.get("/me", 
   authMiddleware, 
   requireRole("admin_asambal"), 
@@ -24,6 +26,7 @@ router.put("/me",
   updateMyAsambalProfile
 );
 
+//SOLICITUDES PENDIENTES
 router.get(
   "/pending-users",
   authMiddleware,
@@ -37,6 +40,16 @@ router.patch(
   requireRole("admin_asambal"),
   validateUser
 );
+
+//CLUBES
+router.post(
+  "/clubs",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  createClubWithAdmin
+);
+
+//JUGADORES
 router.get(
   "/players",
   authMiddleware,

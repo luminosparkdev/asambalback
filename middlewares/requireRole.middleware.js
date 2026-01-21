@@ -1,16 +1,13 @@
-const requireRole = (roles) => {
+function requireRole(...allowedRoles) {
   return (req, res, next) => {
-    if (!req.user || !req.user.role) {
-      return res.status(403).json({ message: "Rol no definido" });
+    const userRoles = req.user?.roles || [];
+    const hasRole = allowedRoles.some(role => userRoles.includes(role));
+
+    if (!hasRole) {
+      return res.status(403).json({ message: "Acceso denegado, rol insuficiente" });
     }
-
-    const allowedRoles = Array.isArray(roles) ? roles : [roles];
-
-    if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ message: "No tenés permisos" });
-    }
-
     next();
+    console.log("ROLES EN TOKEN:", req.user.roles);
   };
 };
 

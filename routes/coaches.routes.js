@@ -1,7 +1,5 @@
 const express = require("express");
 const router = express.Router();
-const { getMyCoachProfile } = require("../controllers/coaches.controller");
-
 const authMiddleware = require("../middlewares/auth.middleware");
 const requireRole = require("../middlewares/requireRole.middleware");
 
@@ -9,67 +7,32 @@ const {
   createProfesor,
   requestJoinCoach,
   getMyCoachRequests,
-  respondCoachRequest,  
+  respondCoachRequest,
   getProfesores,
   getProfesorById,
   updateProfesor,
   toggleProfesorStatus,
-  validateCoach,
   completeProfesorProfile,
   getPendingCoaches,
-  updateMyCoachProfile, 
+  validateCoach,
+  getMyCoachProfile,
+  updateMyCoachProfile,
+  validatePlayersInClub,
 } = require("../controllers/coaches.controller");
 
-router.get(
-    "/pending-coaches", 
-    authMiddleware, 
-    requireRole("admin_club"), 
-    getPendingCoaches
-);
-
-router.patch(
-  "/:coachId/validate-coach",
-  authMiddleware,
-  requireRole("admin_club"),
-  validateCoach
-);
-
+// =======================
+// CREACIÓN
+// =======================
 router.post(
-  "/",
+  "/create",
   authMiddleware,
   requireRole("admin_club"),
   createProfesor
 );
 
-router.post(
-  "/request-join",
-  authMiddleware,
-  requireRole("admin_club"),
-  requestJoinCoach
-);
-
-router.get(
-  "/my-requests",
-  authMiddleware,
-  requireRole("profesor"),
-  getMyCoachRequests
-);
-
-router.patch(
-  "/requests/:id/respond",
-  authMiddleware,
-  requireRole("profesor"),
-  respondCoachRequest
-);
-
-router.get(
-  "/",
-  authMiddleware,
-  requireRole("admin_club"),
-  getProfesores
-);
-
-
+// =======================
+// PERFIL PROPIO
+// =======================
 router.get(
   "/me",
   authMiddleware,
@@ -84,13 +47,64 @@ router.put(
   updateMyCoachProfile
 );
 
+router.post(
+  "/me/complete-profile",
+  authMiddleware,
+  requireRole("profesor"),
+  completeProfesorProfile
+);
+
+// =======================
+// SOLICITUDES
+// =======================
+router.post(
+  "/join-club",
+  authMiddleware,
+  requireRole("profesor"),
+  requestJoinCoach
+);
+
+router.get(
+  "/my-requests",
+  authMiddleware,
+  requireRole("profesor"),
+  getMyCoachRequests
+);
+
+router.patch(
+  "/requests/:id/respond",
+  authMiddleware,
+  requireRole("admin_club"),
+  respondCoachRequest
+);
+
+// =======================
+// LISTAR / DETALLE
+// =======================
+router.get(
+  "/club",
+  authMiddleware,
+  requireRole("admin_club"),
+  getProfesores
+);
+
+router.get(
+  "/club/pending",
+  authMiddleware,
+  requireRole("admin_club"),
+  getPendingCoaches
+);
+
 router.get(
   "/:id",
   authMiddleware,
-  requireRole("admin_club"),
+  requireRole(["admin_club", "profesor"]),
   getProfesorById
 );
 
+// =======================
+// EDITAR / TOGGLE
+// =======================
 router.put(
   "/:id",
   authMiddleware,
@@ -105,11 +119,14 @@ router.patch(
   toggleProfesorStatus
 );
 
-router.post(
-  "/complete-profile",
+// =======================
+// VALIDAR JUGADORES
+// =======================
+router.patch(
+  "/validate-player",
   authMiddleware,
   requireRole("profesor"),
-  completeProfesorProfile
+  validatePlayersInClub
 );
 
 module.exports = router;
