@@ -24,6 +24,7 @@ const authMiddleware = async (req, res, next) => {
         : null;
     }
 
+    console.log("ROLES EN TOKEN:", req.user.roles);
     next();
   } catch {
     return res.status(401).json({ message: "Token inválido o expirado" });

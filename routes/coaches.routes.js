@@ -13,7 +13,7 @@ const {
   updateProfesor,
   toggleProfesorStatus,
   completeProfesorProfile,
-  getPendingCoaches,
+  getCoachPrefillByToken,
   validateCoach,
   getMyCoachProfile,
   updateMyCoachProfile,
@@ -48,11 +48,11 @@ router.put(
 );
 
 router.post(
-  "/me/complete-profile",
-  authMiddleware,
-  requireRole("profesor"),
+  "/:coachId/complete-profile",
   completeProfesorProfile
 );
+
+router.get("/prefill/:activationToken", getCoachPrefillByToken);
 
 // =======================
 // SOLICITUDES
@@ -89,16 +89,9 @@ router.get(
 );
 
 router.get(
-  "/club/pending",
-  authMiddleware,
-  requireRole("admin_club"),
-  getPendingCoaches
-);
-
-router.get(
   "/:id",
   authMiddleware,
-  requireRole(["admin_club", "profesor"]),
+  requireRole("admin_club", "profesor"),
   getProfesorById
 );
 

@@ -5,7 +5,7 @@ const requireRole = require("../middlewares/requireRole.middleware");
 
 const { createUser } = require("../controllers/users.controller");
 const {
-    getPendingUsersInClub,
+    getPendingCoach,
     validateRoleInClub,
     getClubs,
     toggleClubStatus,
@@ -49,11 +49,11 @@ router.put("/me", authMiddleware, requireRole("admin_club"), updateMyClub);
 
 // -------------------- SOLICITUDES PENDIENTES --------------------
 
-// Obtener solicitudes pendientes de profesores/jugadores (admin_club)
-router.get("/pending-users", authMiddleware, requireRole("admin_club"), getPendingUsersInClub);
+// Obtener solicitudes pendientes de profesores (admin_club)
+router.get("/pending-coaches", authMiddleware, requireRole("admin_club"), getPendingCoach);
 
-// Aprobar o rechazar usuario (profesor/jugador)
-router.patch("/validate-user", authMiddleware, requireRole("admin_club"), validateRoleInClub);
+// Aprobar o rechazar usuario profesor
+router.patch("/:id/validate-coach", authMiddleware, requireRole("admin_club"), validateRoleInClub);
 
 // -------------------- CRUD CLUBES (ADMIN_ASAMBAL) --------------------
 

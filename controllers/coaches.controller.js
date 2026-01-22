@@ -50,7 +50,7 @@ const createProfesor = async (req, res) => {
     await db.runTransaction(async (tx) => {
       tx.set(userRef, {
         email,
-        role: "profesor",
+        roles: ["profesor"],
         status: "INCOMPLETO",
         activationToken,
         createdBy: req.user.email,
@@ -276,6 +276,16 @@ const getProfesores = async (req, res) => {
   }
 };
 
+const formatTimestamp = (ts) => {
+  if (!ts || !ts.toDate) return null;
+  return ts
+    .toDate()
+    .toLocaleDateString("es-AR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+};
 
 // OBTENER PROFESOR POR ID
 const getProfesorById = async (req, res) => {
@@ -310,8 +320,8 @@ const getProfesorById = async (req, res) => {
       status: club.status,
       categorias: club.categorias,
 
-      createdAt: data.createdAt,
-      updatedAt: data.updatedAt,
+      createdAt: formatTimestamp(data.createdAt),
+      updatedAt: formatTimestamp(data.updatedAt),
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -419,81 +429,84 @@ const toggleProfesorStatus = async (req, res) => {
 };
 
 const completeProfesorProfile = async (req, res) => {
-  try {
-    const { telefono, domicilio, enea, dni } = req.body;
-    const userId = req.user.id;
+  const { activationToken, telefono, domicilio, enea, dni } = req.body;
 
-    if (
-      !telefono?.trim() ||
-      !domicilio?.trim() ||
-      typeof enea !== "number" ||
-      Number.isNaN(enea) ||
-      !dni?.trim()
-    ) {
-      return res.status(400).json({ message: "Datos incompletos" });
-    }
+  const userSnap = await db
+    .collection("usuarios")
+    .where("activationToken", "==", activationToken)
+    .limit(1)
+    .get();
 
-    const userRef = db.collection("usuarios").doc(userId);
-    const coachRef = db.collection("profesores").doc(userId);
+  if (userSnap.empty) {
+    return res.status(403).json({ message: "Token inválido" });
+  }
 
-    await db.runTransaction(async (tx) => {
-      const userSnap = await tx.get(userRef);
-      const coachSnap = await tx.get(coachRef);
+  if (!activationToken) {
+    return res.status(400).json({ message: "Falta token de activación" });
+  }
 
-      if (!userSnap.exists || !coachSnap.exists) {
-        throw new Error("Profesor no encontrado");
-      }
+  const userRef = userSnap.docs[0].ref;
+  const userId = userRef.id;
+  const coachRef = db.collection("profesores").doc(userId);
 
-      const coachData = coachSnap.data();
-
-      const updatedClubs = coachData.clubs.map((club) => ({
-        ...club,
-        status: "PENDIENTE",
-      }));
-
-      tx.update(userRef, {
-        status: "PENDIENTE",
-        updatedAt: new Date(),
-      });
-
-      tx.update(coachRef, {
-        telefono,
-        domicilio,
-        enea,
-        dni,
-        clubs: updatedClubs,
-        updatedAt: new Date(),
-      });
+  await db.runTransaction(async (tx) => {
+    tx.update(userRef, {
+      status: "PENDIENTE",
+      activationToken: null,
+      updatedAt: new Date(),
     });
 
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+    tx.update(coachRef, {
+      telefono,
+      domicilio,
+      enea,
+      dni,
+      status: "PENDIENTE",
+      updatedAt: new Date(),
+    });
+  });
+
+  res.json({ success: true });
 };
 
-const getPendingCoaches = async (req, res) => {
-  try {
-    const clubId = req.user.clubId;
+const getCoachPrefillByToken = async (req, res) => {
+  const { activationToken } = req.params;
 
-    const snap = await db.collection("profesores").get();
-
-    const data = snap.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }))
-      .filter(profesor =>
-        profesor.clubs?.some(
-          club =>
-            club.clubId === clubId &&
-            club.status === "PENDIENTE"
-        )
-      );
-
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+  if (!activationToken) {
+    return res.status(400).json({ message: "Falta token" });
   }
-};
 
+  // 1️⃣ Buscar usuario por token
+  const userSnap = await db
+    .collection("usuarios")
+    .where("activationToken", "==", activationToken)
+    .limit(1)
+    .get();
+
+  if (userSnap.empty) {
+    return res.status(404).json({ message: "Token inválido" });
+  }
+
+  const userId = userSnap.docs[0].id;
+
+  // 2️⃣ Traer perfil del profesor
+  const coachSnap = await db.collection("profesores").doc(userId).get();
+
+  if (!coachSnap.exists) {
+    return res.status(404).json({ message: "Profesor no encontrado" });
+  }
+
+  const coachData = coachSnap.data();
+
+  // 3️⃣ RESPUESTA → TODO desde profesores
+  return res.json({
+    nombre: coachData.nombre || "",
+    apellido: coachData.apellido || "",
+    email: coachData.email || "",
+    categorias:
+      coachData.clubs?.flatMap((c) => c.categorias) || [],
+  });
+};
 
 const validateCoach = async (req, res) => {
   try {
@@ -664,7 +677,7 @@ module.exports = {
   updateProfesor,
   toggleProfesorStatus,
   completeProfesorProfile,
-  getPendingCoaches,
+  getCoachPrefillByToken,
   validateCoach,
   getMyCoachProfile,
   updateMyCoachProfile,
