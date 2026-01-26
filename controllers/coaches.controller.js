@@ -12,6 +12,7 @@ const createProfesor = async (req, res) => {
   try {
     const { nombre, apellido, email, categorias } = req.body;
 
+    // Validación de datos
     if (
       !nombre?.trim() ||
       !apellido?.trim() ||
@@ -26,20 +27,90 @@ const createProfesor = async (req, res) => {
       return res.status(400).json({ message: "Usuario sin club asignado" });
     }
 
-    const existing = await db
-      .collection("profesores")
+    // BUSCAMOS USUARIO EXISTENTE EN "usuarios"
+    const userSnap = await db
+      .collection("usuarios")
       .where("email", "==", email)
       .get();
 
-    if (!existing.empty) {
-      const doc = existing.docs[0];
-      return res.status(200).json({
-        code: "PROFESOR_EXISTENTE",
-        profesorId: doc.id,
-        message: "El profesor ya existe en el sistema",
-      });
+    if (!userSnap.empty) {
+      const userDoc = userSnap.docs[0];
+      const userData = userDoc.data();
+
+      // Convertimos roles a array real
+      const rolesArray = Array.isArray(userData.roles)
+        ? userData.roles
+        : Object.values(userData.roles || {});
+
+      // 1️⃣ Usuario admin → error
+      if (rolesArray.includes("admin_club") || rolesArray.includes("admin_asambal")) {
+        return res.status(400).json({
+          message: "No se puede crear un profesor con un email de administrador",
+        });
+      }
+
+      // 2️⃣ Usuario profesor
+      if (rolesArray.includes("profesor")) {
+        const coachSnap = await db
+          .collection("profesores")
+          .where("userId", "==", userDoc.id)
+          .get();
+
+        if (!coachSnap.empty) {
+          const coachData = coachSnap.docs[0].data();
+          const clubIds = coachData.clubs.map(c => c.clubId);
+
+          if (clubIds.includes(req.user.clubId)) {
+            return res.status(400).json({
+              message: "El profesor ya fue cargado en su club",
+            });
+          } else {
+            return res.status(200).json({
+              code: "PROFESOR_EXISTENTE",
+              profesorId: coachSnap.docs[0].id,
+              message: "El profesor ya existe, ¿desea enviar solicitud para agregarlo a su club?",
+            });
+          }
+        }
+      }
+
+      // 3️⃣ Usuario jugador
+      if (rolesArray.includes("jugador")) {
+        if (!userData.fechaNacimiento) {
+          return res.status(400).json({
+            message: "No se puede determinar la edad del jugador",
+          });
+        }
+
+        const birthDate = new Date(userData.fechaNacimiento);
+        const ageDifMs = Date.now() - birthDate.getTime();
+        const ageDate = new Date(ageDifMs);
+        const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+
+        if (age < 18) {
+          return res.status(400).json({
+            message: "No se puede crear un profesor menor de 18 años",
+          });
+        }
+
+        const jugadorClubId = userData.clubId || null;
+        if (jugadorClubId === req.user.clubId) {
+          return res.status(200).json({
+            code: "JUGADOR_EXISTENTE",
+            jugadorId: userDoc.id,
+            message: "El usuario es jugador en su club, ¿desea agregarlo como profesor?",
+          });
+        } else {
+          return res.status(200).json({
+            code: "JUGADOR_EXISTENTE_OTRO_CLUB",
+            jugadorId: userDoc.id,
+            message: "El usuario es jugador en otro club, ¿desea agregarlo como profesor a su club?",
+          });
+        }
+      }
     }
 
+    // --- Si no hay conflictos, se crea el profesor normalmente ---
     const activationToken = generateActivationToken();
 
     const userRef = db.collection("usuarios").doc();
@@ -80,73 +151,92 @@ const createProfesor = async (req, res) => {
 
     res.json({ success: true, id: userRef.id });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: err.message });
   }
 };
 
-// SOLICITAR UNIRSE A UN CLUB
-const requestJoinCoach = async (req, res) => {
+const getPendingPlayers = async (req, res) => {
   try {
-    const { email, categorias } = req.body;
-    const { clubId, nombreClub } = req.user;
+    console.log("🧠 req.user =", JSON.stringify(req.user, null, 2));
 
-    if (!email || !Array.isArray(categorias) || categorias.length === 0) {
-      return res.status(400).json({ message: "Datos incompletos" });
+    const { clubId } = req.params; // 🔥 ACA ESTABA EL ERROR
+    const professorClubIds = req.user.clubIds || [];
+
+    if (!clubId) {
+      return res.status(400).json({
+        message: "Debe especificar el club",
+      });
     }
 
-    const coachSnap = await db
-      .collection("profesores")
-      .where("email", "==", email)
-      .limit(1)
+    if (!professorClubIds.includes(clubId)) {
+      return res.status(403).json({
+        message: "El profesor no pertenece a este club",
+      });
+    }
+
+    const snapshot = await db
+      .collection("jugadores")
+      .where("status", "in", ["PENDIENTE", "INCOMPLETO"])
       .get();
+
+    const pendingPlayers = [];
+
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+
+      const pendingClub = (data.clubs || []).find(
+        (club) =>
+          club.clubId === clubId &&
+          club.status === "INCOMPLETO"
+      );
+
+      if (pendingClub) {
+        pendingPlayers.push({
+          id: doc.id,
+          nombre: data.nombre,
+          apellido: data.apellido,
+          email: data.email,
+          categorias: pendingClub.categorias || [],
+        });
+      }
+    });
+
+    return res.json(pendingPlayers);
+  } catch (err) {
+    console.error("❌ ERROR getPendingPlayers:", err);
+    return res.status(500).json({
+      message: "Error interno del servidor",
+    });
+  }
+};
+
+const getMyClubs = async (req, res) => {
+  try {
+    const userId = req.user.id; 
+    const coachSnap = await db.collection("profesores").where("userId", "==", userId).get();
 
     if (coachSnap.empty) {
       return res.status(404).json({ message: "Profesor no encontrado" });
     }
 
-    const coachDoc = coachSnap.docs[0];
-    const coachData = coachDoc.data();
+    const coachData = coachSnap.docs[0].data();
+    const clubs = coachData.clubs || [];
 
-    // ¿Ya pertenece al club?
-    const alreadyInClub = coachData.clubs?.some(
-      (c) => c.clubId === clubId
-    );
+    // Retornamos clubId, nombreClub y categorias
+    const simplified = clubs.map(c => ({
+      clubId: c.clubId,
+      nombreClub: c.nombreClub,
+      categorias: c.categorias || []
+    }));
 
-    if (alreadyInClub) {
-      return res.status(400).json({
-        message: "El profesor ya pertenece a este club",
-      });
-    }
-
-    // ¿Ya hay solicitud pendiente?
-    const existingRequest = await db
-      .collection("coachRequests")
-      .where("profesorId", "==", coachDoc.id)
-      .where("clubId", "==", clubId)
-      .where("status", "==", "PENDIENTE")
-      .get();
-
-    if (!existingRequest.empty) {
-      return res.status(400).json({
-        message: "Ya existe una solicitud pendiente",
-      });
-    }
-
-    await db.collection("coachRequests").add({
-      profesorId: coachDoc.id,
-      emailProfesor: email,
-      clubId,
-      nombreClub,
-      categorias,
-      status: "PENDIENTE",
-      createdAt: new Date(),
-    });
-
-    res.json({ success: true });
+    res.json(simplified);
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: err.message });
   }
 };
+
 
 //SOLICITUDES PENDIENTES PARA EL PROFESOR
 const getMyCoachRequests = async (req, res) => {
@@ -231,7 +321,6 @@ const respondCoachRequest = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 
 // LISTAR PROFESORES DEL CLUB
 const getProfesores = async (req, res) => {
@@ -469,6 +558,79 @@ const completeProfesorProfile = async (req, res) => {
   res.json({ success: true });
 };
 
+const sendRequestJoinToCoach = async (req, res) => {
+  try {
+    const { email, nombre, apellido, categorias } = req.body;
+    const { clubId, nombreClub } = req.user; // admin_club que envía la solicitud
+
+    if (!email || !nombre?.trim() || !apellido?.trim() || !Array.isArray(categorias) || categorias.length === 0) {
+      return res.status(400).json({ message: "Datos incompletos" });
+    }
+
+    // Buscamos al profesor por email
+    const coachSnap = await db
+      .collection("profesores")
+      .where("email", "==", email)
+      .limit(1)
+      .get();
+
+    if (coachSnap.empty) {
+      return res.status(404).json({ message: "Profesor no encontrado" });
+    }
+
+    const coachDoc = coachSnap.docs[0];
+    const coachData = coachDoc.data();
+
+    // ✅ Validamos que el nombre y apellido coincidan
+    if (coachData.nombre !== nombre.trim() || coachData.apellido !== apellido.trim()) {
+      return res.status(400).json({
+        message: "Los datos ingresados no coinciden con el profesor registrado",
+        existingNombre: coachData.nombre,
+        existingApellido: coachData.apellido,
+      });
+    }
+
+    // Verificamos si ya pertenece al club
+    const alreadyInClub = coachData.clubs?.some((c) => c.clubId === clubId);
+
+    if (alreadyInClub) {
+      return res.status(400).json({
+        message: "El profesor ya pertenece a este club",
+      });
+    }
+
+    // Verificamos si ya hay solicitud pendiente de este club
+    const existingRequest = await db
+      .collection("coachRequests")
+      .where("profesorId", "==", coachDoc.id)
+      .where("clubId", "==", clubId)
+      .where("status", "==", "PENDIENTE")
+      .get();
+
+    if (!existingRequest.empty) {
+      return res.status(400).json({
+        message: "Ya existe una solicitud pendiente",
+      });
+    }
+
+    // Creamos la solicitud
+    await db.collection("coachRequests").add({
+      profesorId: coachDoc.id,
+      emailProfesor: email,
+      clubId,
+      nombreClub,
+      categorias,
+      status: "PENDIENTE",
+      createdAt: new Date(),
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
 const getCoachPrefillByToken = async (req, res) => {
   const { activationToken } = req.params;
 
@@ -669,7 +831,9 @@ const validatePlayersInClub = async (req, res) => {
 
 module.exports = {
   createProfesor,
-  requestJoinCoach,
+  getMyClubs,
+  getPendingPlayers,
+  sendRequestJoinToCoach,
   getMyCoachRequests,
   respondCoachRequest,
   getProfesores,

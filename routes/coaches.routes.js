@@ -5,7 +5,8 @@ const requireRole = require("../middlewares/requireRole.middleware");
 
 const {
   createProfesor,
-  requestJoinCoach,
+  getMyClubs,
+  getPendingPlayers,
   getMyCoachRequests,
   respondCoachRequest,
   getProfesores,
@@ -18,7 +19,7 @@ const {
   getMyCoachProfile,
   updateMyCoachProfile,
   validatePlayersInClub,
-} = require("../controllers/coaches.controller");
+} = require("../controllers/coaches.controller.js");
 
 // =======================
 // CREACIÓN
@@ -28,6 +29,20 @@ router.post(
   authMiddleware,
   requireRole("admin_club"),
   createProfesor
+);
+
+router.get(
+  "/my-clubs",
+  authMiddleware,
+  requireRole("profesor"),
+  getMyClubs
+);
+
+router.get(
+  "/pending-players/:clubId",
+  authMiddleware,
+  requireRole("profesor"),
+  getPendingPlayers
 );
 
 // =======================
@@ -57,12 +72,6 @@ router.get("/prefill/:activationToken", getCoachPrefillByToken);
 // =======================
 // SOLICITUDES
 // =======================
-router.post(
-  "/join-club",
-  authMiddleware,
-  requireRole("profesor"),
-  requestJoinCoach
-);
 
 router.get(
   "/my-requests",
@@ -74,7 +83,7 @@ router.get(
 router.patch(
   "/requests/:id/respond",
   authMiddleware,
-  requireRole("admin_club"),
+  requireRole("profesor"),
   respondCoachRequest
 );
 

@@ -5,36 +5,43 @@ const requireRole = require("../middlewares/requireRole.middleware");
 
 const { createUser } = require("../controllers/users.controller");
 const {
-    getPendingCoach,
-    validateRoleInClub,
-    getClubs,
-    toggleClubStatus,
-    getClubById,
-    updateClub,
-    completeClubProfile,
-    getMyClubProfile,
-    updateMyClub
+  getPendingCoach,
+  validateRoleInClub,
+  getClubs,
+  toggleClubStatus,
+  getClubById,
+  updateClub,
+  completeClubProfile,
+  getMyClubProfile,
+  updateMyClub
 } = require("../controllers/clubs.controller");
+const { sendRequestJoinToCoach } = require("../controllers/coaches.controller");
 
 // -------------------- CREACIÓN DE USUARIOS --------------------
 
 // Crear profesor (admin_club)
-router.post("/create-professor", 
-  authMiddleware, 
-  requireRole("admin_club"), 
+router.post("/create-professor",
+  authMiddleware,
+  requireRole("admin_club"),
   (req, res) => {
     req.body.role = "profesor";
     createUser(req, res);
-});
+  });
+
+// Enviar solicitud de unirse a un club (jugador)
+router.post("/request-coach",
+  authMiddleware,
+  requireRole("admin_club"),
+  sendRequestJoinToCoach);
 
 // Crear jugador (admin_club)
-router.post("/create-player", 
-  authMiddleware, 
-  requireRole("admin_club"), 
+router.post("/create-player",
+  authMiddleware,
+  requireRole("admin_club"),
   (req, res) => {
     req.body.role = "jugador";
     createUser(req, res);
-});
+  });
 
 // -------------------- PERFIL Y COMPLETAR PERFIL --------------------
 

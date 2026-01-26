@@ -15,14 +15,14 @@ const {
 const { createClubWithAdmin } = require("../controllers/clubs.controller");
 
 //PERFIL ASAMBAL
-router.get("/me", 
-  authMiddleware, 
-  requireRole("admin_asambal"), 
+router.get("/me",
+  authMiddleware,
+  requireRole("admin_asambal"),
   getMyAsambalProfile
 );
-router.put("/me", 
-  authMiddleware, 
-  requireRole("admin_asambal"), 
+router.put("/me",
+  authMiddleware,
+  requireRole("admin_asambal"),
   updateMyAsambalProfile
 );
 

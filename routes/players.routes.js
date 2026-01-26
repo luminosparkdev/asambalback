@@ -13,7 +13,6 @@ const {
   updatePlayer,
   togglePlayerStatus,
   completePlayerProfile,
-  getPendingPlayers,
   validatePlayer,
   updateMyPlayerProfile,
 } = require("../controllers/players.controller");
@@ -24,18 +23,8 @@ const {
 
 // COMPLETAR PERFIL JUGADOR
 router.post(
-  "/me/complete-profile",
-  authMiddleware,
-  requireRole("jugador"),
+  "/:playerId/complete-profile",
   completePlayerProfile
-);
-
-// LISTAR JUGADORES PENDIENTES DE VALIDACIÓN (solo profesor)
-router.get(
-  "/pending",
-  authMiddleware,
-  requireRole("profesor"),
-  getPendingPlayers
 );
 
 // VALIDAR / RECHAZAR JUGADOR (solo profesor)
@@ -52,9 +41,9 @@ router.patch(
 
 // CREAR JUGADOR (profesor o admin_club)
 router.post(
-  "/",
+  "/create",
   authMiddleware,
-  requireRole(["profesor", "admin_club"]),
+  requireRole("profesor", "admin_club"),
   createPlayer
 );
 

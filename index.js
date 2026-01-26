@@ -9,6 +9,7 @@ const clubsRoutes = require("./routes/clubs.routes");
 const coachesRoutes = require("./routes/coaches.routes");
 const asambalRoutes = require("./routes/asambal.routes");
 const jugadoresRoutes = require("./routes/players.routes");
+const categoriesRoutes = require("./routes/categories.routes");
 
 const app = express();
 
@@ -28,6 +29,7 @@ app.use("/api/clubs", clubsRoutes);
 app.use("/api/coaches", coachesRoutes);
 app.use("/api/asambal", asambalRoutes);
 app.use("/api/players", jugadoresRoutes);
+app.use("/api/categories", categoriesRoutes);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));

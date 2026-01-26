@@ -4,64 +4,88 @@ const { createAuthUserIfNotExists } = require("../utils/firebaseAuth");
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require("../utils/token");
 const { getAuth } = require("firebase-admin/auth");
 
-
-  // LOGIN
-  const login = async (req, res) => {
+//LOGIN
+const login = async (req, res) => {
   try {
     const { email, password } = req.body;
     const auth = getAuth();
 
-    // Intentar iniciar sesión en Firebase Auth
-    let userRecord;
+    // 1️⃣ Verificar usuario en Auth
     try {
-      userRecord = await auth.getUserByEmail(email);
+      await auth.getUserByEmail(email);
     } catch (err) {
       return res.status(400).json({ message: "Usuario no encontrado" });
     }
 
-    // 🔑 Para validar password en backend necesitamos usar Firebase Client SDK o custom token
-    // Aquí lo típico es delegar al cliente, pero podemos crear un endpoint con Firebase REST API:
+    // 2️⃣ Validar password vía Firebase REST
     const axios = require("axios");
-    const fbKey = process.env.FIREBASE_API_KEY; // tu web API key de Firebase
+    const fbKey = process.env.FIREBASE_API_KEY;
 
     try {
-      const fbRes = await axios.post(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${fbKey}`, {
-        email,
-        password,
-        returnSecureToken: true
-      });
-
-      // ✅ Login correcto
-      const userSnap = await db.collection("usuarios").where("email", "==", email).limit(1).get();
-      const userDoc = userSnap.docs[0];
-      const userData = userDoc.data();
-      const roles = Array.isArray(userData.roles) ? userData.roles : Object.values(userData.roles || {});
-      const clubId = roles.includes("admin_club") ? userData.clubId : null;
-
-      const accessToken = generateAccessToken({
-        id: userDoc.id,
-        email: userData.email,
-        roles,
-        clubId,
-      });
-
-      const refreshToken = generateRefreshToken({ email: userData.email });
-
-      return res.cookie("refreshToken", refreshToken, {
-        httpOnly: true,
-        sameSite: "strict",
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-      }).json({
-        user: { email: userData.email, roles, clubId },
-        token: accessToken,
-      });
-
+      await axios.post(
+        `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${fbKey}`,
+        {
+          email,
+          password,
+          returnSecureToken: true,
+        }
+      );
     } catch (err) {
       return res.status(400).json({ message: "Contraseña incorrecta" });
     }
 
+    // 3️⃣ Obtener usuario de Firestore
+    const userSnap = await db
+      .collection("usuarios")
+      .where("email", "==", email)
+      .limit(1)
+      .get();
+
+    if (userSnap.empty) {
+      return res.status(400).json({ message: "Usuario no registrado" });
+    }
+
+    const userDoc = userSnap.docs[0];
+    const userData = userDoc.data();
+
+    const roles = Array.isArray(userData.roles)
+      ? userData.roles
+      : Object.values(userData.roles || {});
+
+    // 🔥 CLUBIDS UNIFICADOS
+    const clubs = userData.clubs || [];
+
+    // 4️⃣ Token
+    const accessToken = generateAccessToken({
+      id: userDoc.id,
+      email: userData.email,
+      roles,
+      clubs,// 👈 AHORA SÍ
+    });
+
+    const refreshToken = generateRefreshToken({
+      email: userData.email,
+    });
+
+    // 5️⃣ Response
+    return res
+      .cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      })
+      .json({
+        user: {
+          id: userDoc.id,
+          email: userData.email,
+          roles,
+          clubs,
+        },
+        token: accessToken,
+      });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    console.error("❌ LOGIN ERROR:", err);
+    return res.status(500).json({ message: "Error interno" });
   }
 };
 
