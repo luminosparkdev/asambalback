@@ -336,66 +336,80 @@ const validateRoleInClub = async (req, res) => {
   try {
     const { action } = req.body;
     const userId = req.params.id;
-    const clubId = req.user.clubId;
 
     if (action !== "APPROVE") {
       return res.status(400).json({ message: "Acción no válida" });
     }
 
-    // ================= USUARIO =================
+    const activeClub = req.user.clubs?.[0];
+    if (!activeClub?.clubId) {
+      return res.status(400).json({ message: "Usuario sin club asignado" });
+    }
+
+    const clubId = activeClub.clubId;
+    const now = new Date();
+
     const userRef = db.collection("usuarios").doc(userId);
-    const userSnap = await userRef.get();
-
-    if (!userSnap.exists) {
-      return res.status(404).json({ message: "Usuario no encontrado" });
-    }
-
-    const userData = userSnap.data();
-
-    const roles = Array.isArray(userData.roles)
-      ? userData.roles
-      : Object.values(userData.roles || {});
-
-    if (!roles.includes("profesor")) {
-      return res.status(400).json({ message: "El usuario no es profesor" });
-    }
-
-    // 👉 solo si está pendiente
-    if (userData.status === "PENDIENTE") {
-      await userRef.update({
-        status: "ACTIVO",
-        updatedAt: new Date(),
-      });
-    }
-
-    // ================= PROFESOR =================
     const profRef = db.collection("profesores").doc(userId);
-    const profSnap = await profRef.get();
 
-    if (!profSnap.exists) {
-      return res.status(404).json({ message: "Documento profesor no encontrado" });
-    }
+    await db.runTransaction(async (tx) => {
+      // ================= LECTURAS =================
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) {
+        throw new Error("Usuario no encontrado");
+      }
 
-    const profData = profSnap.data();
+      const profSnap = await tx.get(profRef);
+      if (!profSnap.exists) {
+        throw new Error("Documento profesor no encontrado");
+      }
 
-    // 👉 actualizar club correspondiente
-    const updatedClubs = profData.clubs.map(c =>
-      c.clubId === clubId && c.status === "INCOMPLETO"
-        ? { ...c, status: "ACTIVO" }
-        : c
-    );
+      const userData = userSnap.data();
+      const profData = profSnap.data();
 
-    const updates = {
-      clubs: updatedClubs,
-      updatedAt: new Date(),
-    };
+      const roles = Array.isArray(userData.roles)
+        ? userData.roles
+        : Object.values(userData.roles || {});
 
-    // 👉 solo si el estado general está pendiente
-    if (profData.status === "PENDIENTE") {
-      updates.status = "ACTIVO";
-    }
+      if (!roles.includes("profesor")) {
+        throw new Error("El usuario no es profesor");
+      }
 
-    await profRef.update(updates);
+      // ================= CÁLCULOS =================
+      const updatedUserClubs = userData.clubs.map(c =>
+        c.clubId === clubId
+          ? { ...c, status: "ACTIVO" }
+          : c
+      );
+
+      const updatedProfClubs = profData.clubs.map(c =>
+        c.clubId === clubId
+          ? { ...c, status: "ACTIVO" }
+          : c
+      );
+
+      const userUpdates = {
+        clubs: updatedUserClubs,
+        updatedAt: now,
+      };
+
+      if (userData.status === "PENDIENTE") {
+        userUpdates.status = "ACTIVO";
+      }
+
+      const profUpdates = {
+        clubs: updatedProfClubs,
+        updatedAt: now,
+      };
+
+      if (profData.status !== "ACTIVO") {
+        profUpdates.status = "ACTIVO";
+      }
+
+      // ================= ESCRITURAS =================
+      tx.update(userRef, userUpdates);
+      tx.update(profRef, profUpdates);
+    });
 
     return res.json({ success: true });
   } catch (err) {
@@ -406,11 +420,16 @@ const validateRoleInClub = async (req, res) => {
 
 const getPendingCoach = async (req, res) => {
   try {
-    const clubId = req.user.clubId;
+    const activeClub = req.user.clubs?.[0];
+
+    if (!activeClub?.clubId) {
+      return res.status(400).json({ message: "Usuario sin club asignado" });
+    }
+
+    const clubId = activeClub.clubId;
 
     const snapshot = await db
       .collection("profesores")
-      .where("status", "==", "PENDIENTE")
       .get();
 
     const pendingUsers = [];
@@ -419,7 +438,7 @@ const getPendingCoach = async (req, res) => {
       const data = doc.data();
 
       const clubData = data.clubs?.find(
-        c => c.clubId === clubId && c.status === "INCOMPLETO"
+        c => c.clubId === clubId && c.status === "PENDIENTE"
       );
 
       if (clubData) {
@@ -427,10 +446,11 @@ const getPendingCoach = async (req, res) => {
           id: doc.id,
           email: data.email,
           nombre: data.nombre,
+          apellido: data.apellido,
           role: "profesor",
-          estado: "PENDIENTE",
+          status: "PENDIENTE",
           categorias: clubData.categorias || [],
-          clubId: clubData.clubId,
+          clubId,
         });
       }
     });
