@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middlewares/auth.middleware");
 const requireRole = require("../middlewares/requireRole.middleware");
+const resolveActiveClub = require("../middlewares/activeClub.middleware");
 
 const {
   createProfesor,
@@ -100,6 +101,7 @@ router.get(
 router.get(
   "/:id",
   authMiddleware,
+  resolveActiveClub,
   requireRole("admin_club", "profesor"),
   getProfesorById
 );
@@ -110,6 +112,7 @@ router.get(
 router.put(
   "/:id",
   authMiddleware,
+  resolveActiveClub,
   requireRole("admin_club"),
   updateProfesor
 );
@@ -117,6 +120,7 @@ router.put(
 router.patch(
   "/:id/toggle",
   authMiddleware,
+  resolveActiveClub,
   requireRole("admin_club"),
   toggleProfesorStatus
 );
@@ -127,6 +131,7 @@ router.patch(
 router.patch(
   "/validate-player",
   authMiddleware,
+  resolveActiveClub,
   requireRole("profesor"),
   validatePlayersInClub
 );
