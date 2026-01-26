@@ -244,7 +244,7 @@ const getMyClubs = async (req, res) => {
     // Retornamos clubId, nombreClub y categorias
     const simplified = clubs.map(c => ({
       clubId: c.clubId,
-      nombreClub: c.nombreClub,
+      nombre: c.nombre,
       categorias: c.categorias || []
     }));
 
