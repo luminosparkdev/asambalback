@@ -67,6 +67,11 @@ const login = async (req, res) => {
       email: userData.email,
     });
 
+    console.log("ACCESS TOKEN: ", accessToken);
+    console.log("REFRESH TOKEN: ", refreshToken);
+    console.log("USER DATA: ", userData);
+    console.log("Clubes  : ", clubs);
+
     // 5️⃣ Response
     return res
       .cookie("refreshToken", refreshToken, {
@@ -105,7 +110,10 @@ const refreshToken = async (req, res) => {
 
     if (userData.status !== "ACTIVO") return res.status(403).json({ message: "Usuario no activo" });
 
-    const roles = userData.roles || [];
+    const rolesRaw = userData.roles || [];
+    const roles = Array.isArray(rolesRaw)
+      ? rolesRaw
+      : Object.values(rolesRaw || {});
     const clubId = roles.includes("admin_club") ? userData.clubId : null;
 
     const newAccessToken = generateAccessToken({
@@ -143,7 +151,6 @@ const activateAccount = async (req, res) => {
     }
 
     // Hash password y actualizamos Firebase Auth
-    const hashedPassword = bcrypt.hashSync(password, 10);
     await createAuthUserIfNotExists(email, password); // Si no existe en Firebase Auth lo crea
 
     // Actualizamos usuario en Firestore

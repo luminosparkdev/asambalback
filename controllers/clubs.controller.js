@@ -49,11 +49,11 @@ const createClubWithAdmin = async (req, res) => {
 
       tx.set(userRef, {
         email: adminEmail,
-        roles: ["admin_club"],
         clubId: clubRef.id,
+        roles: ["admin_club"],
         status: "INCOMPLETO",
         activationToken,
-
+        clubs: [{ nombre: clubName, clubId: clubRef.id }],
         createdBy: req.user.email,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -271,7 +271,12 @@ const completeClubProfile = async (req, res) => {
 
 const getMyClubProfile = async (req, res) => {
   try {
-    const clubId = req.user.clubId;
+    console.log("USER: ", req.user);
+    const clubId = req.user.clubs?.[0]?.clubId;
+
+    if (!clubId) {
+      return res.status(400).json({ message: "Club no asociado al usuario" });
+    }
 
     const doc = await db.collection("clubes").doc(clubId).get();
 
@@ -290,7 +295,11 @@ const getMyClubProfile = async (req, res) => {
 
 const updateMyClub = async (req, res) => {
   try {
-    const clubId = req.user.clubId;
+    const clubId = req.user.clubs?.[0]?.clubId;
+
+    if (!clubId) {
+      return res.status(400).json({ message: "Club no asociado al usuario" });
+    }
 
     const allowedFields = [
       "ciudad",
