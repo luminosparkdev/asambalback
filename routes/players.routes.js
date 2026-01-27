@@ -83,7 +83,7 @@ router.get(
 router.get(
   "/:id",
   authMiddleware,
-  requireRole(["profesor", "admin_club", "jugador"]),
+  requireRole("profesor", "admin_club", "jugador"),
   getPlayerById
 );
 
@@ -91,7 +91,7 @@ router.get(
 router.put(
   "/:id",
   authMiddleware,
-  requireRole(["profesor", "admin_club"]),
+  requireRole("profesor", "admin_club"),
   updatePlayer
 );
 
@@ -99,7 +99,7 @@ router.put(
 router.patch(
   "/:id/toggle",
   authMiddleware,
-  requireRole(["profesor", "admin_club"]),
+  requireRole("profesor", "admin_club"),
   togglePlayerStatus
 );
 

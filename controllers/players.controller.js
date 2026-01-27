@@ -157,6 +157,9 @@ const createPlayer = async (req, res) => {
         userId: userRef.id,
         coachId, // <-- aquí asignamos coachId plano para facilitar consultas
         status: "INCOMPLETO",
+        habilitadoAsambal: false,
+        becado: false,
+        createdAt: now,
         updatedAt: now,
         clubs: [
           {
