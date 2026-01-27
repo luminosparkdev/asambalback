@@ -114,9 +114,18 @@ const createPlayer = async (req, res) => {
 
     // Buscar nombre del club desde profesor o admin
     let nombreClub = "Nombre del club";
-    if (req.user.clubs) {
-      const club = req.user.clubs.find(c => c.clubId === clubId);
-      nombreClub = club?.nombreClub || nombreClub;
+    if (req.user.roles.includes("profesor")) {
+      const profSnap = await db
+        .collection("profesores")
+        .where("userId", "==", req.user.id)
+        .limit(1)
+        .get();
+
+      if (!profSnap.empty) {
+        const profData = profSnap.docs[0].data();
+        const club = profData.clubs?.find((c) => c.clubId === clubId);
+        nombreClub = club?.nombre || nombreClub;
+      }
     }
 
     await db.runTransaction(async (tx) => {
@@ -128,6 +137,15 @@ const createPlayer = async (req, res) => {
         createdBy: req.user.email,
         createdAt: now,
         updatedAt: now,
+        clubs: [
+          {
+            clubId,
+            nombreClub,
+            categorias,
+            status: "INCOMPLETO",
+            updatedAt: now,
+          }
+        ]
       });
 
       tx.set(jugadorRef, {
@@ -297,74 +315,64 @@ const completePlayerProfile = async (req, res) => {
       return res.status(400).json({ message: "Faltan datos obligatorios" });
     }
 
-    // 1️⃣ Usuario
     const userRef = db.collection("usuarios").doc(playerId);
-    const userSnap = await userRef.get();
+    const playerRef = db.collection("jugadores").doc(playerId);
 
-    if (!userSnap.exists) {
-      return res.status(404).json({ message: "Usuario no encontrado" });
-    }
+    await db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      const playerSnap = await tx.get(playerRef);
 
-    const userData = userSnap.data();
+      if (!userSnap.exists) throw new Error("Usuario no encontrado");
+      if (!playerSnap.exists) throw new Error("Jugador no encontrado");
 
-    // 2️⃣ Token
-    if (userData.activationToken !== activationToken) {
-      return res.status(401).json({ message: "Token inválido o expirado" });
-    }
+      const userData = userSnap.data();
+      const playerData = playerSnap.data();
 
-    // 3️⃣ Crear Auth (sin sesión)
-    const password = req.body.password || "temporal123";
-    await createAuthUserIfNotExists(userData.email, password);
+      if (userData.activationToken !== activationToken) {
+        throw new Error("Token inválido o expirado");
+      }
 
-    const now = new Date();
+      const now = new Date();
 
-    // 4️⃣ Roles usuario
-    const updatedRoles = Array.isArray(userData.roles)
-      ? userData.roles
-      : Object.values(userData.roles || {});
+      // Roles usuario
+      const updatedRoles = Array.isArray(userData.roles)
+        ? userData.roles
+        : Object.values(userData.roles || {});
+      if (!updatedRoles.includes("jugador")) updatedRoles.push("jugador");
 
-    if (!updatedRoles.includes("jugador")) {
-      updatedRoles.push("jugador");
-    }
-
-    await userRef.update({
-      status: "PENDIENTE",
-      roles: updatedRoles,
-      updatedAt: now,
-    });
-
-    // 5️⃣ Obtener jugador EXISTENTE (creado por profesor)
-    const jugadorRef = db.collection("jugadores").doc(playerId);
-    const jugadorSnap = await jugadorRef.get();
-
-    if (!jugadorSnap.exists) {
-      return res.status(400).json({
-        message: "El jugador no fue creado previamente por un profesor",
-      });
-    }
-
-    const jugadorData = jugadorSnap.data();
-
-    if (!jugadorData.clubs || !jugadorData.clubs.length) {
-      return res.status(400).json({
-        message: "El jugador no tiene club asignado",
-      });
-    }
-
-    // 6️⃣ Actualizar jugador (club INTACTO)
-    await jugadorRef.set(
-      {
-        email: userData.email,
-        status: "INCOMPLETO",
-
-        // 👇 datos planos
-        ...form,
-
-        tutor: tutor || null,
+      // 1️⃣ Actualizamos usuario
+      tx.update(userRef, {
+        status: "PENDIENTE",
+        roles: updatedRoles,
         updatedAt: now,
-      },
-      { merge: true }
-    );
+        activationToken: null,
+        clubs: [
+          {
+            clubId,
+            nombreClub,
+            categorias,
+            status: "PENDIENTE",
+            updatedAt: now,
+          }
+        ]
+      });
+
+      // 2️⃣ Actualizamos jugador
+      // Mantenemos clubs intactos y solo cambiamos su status a PENDIENTE
+      const updatedClubs = (playerData.clubs || []).map((club) => ({
+        ...club,
+        status: "PENDIENTE",
+        updatedAt: now,
+      }));
+
+      tx.update(playerRef, {
+        ...form, // merge del formulario sin tocar clubs ni status
+        tutor: tutor || null,
+        status: "PENDIENTE",
+        clubs: updatedClubs,
+        updatedAt: now,
+      });
+    });
 
     return res.json({
       success: true,
@@ -372,7 +380,7 @@ const completePlayerProfile = async (req, res) => {
     });
   } catch (err) {
     console.error("❌ ERROR completePlayerProfile:", err);
-    return res.status(500).json({ message: "Error interno del servidor" });
+    return res.status(500).json({ message: err.message });
   }
 };
 

@@ -178,24 +178,22 @@ const getPendingPlayers = async (req, res) => {
   try {
     console.log("🧠 req.user =", JSON.stringify(req.user, null, 2));
 
-    const { clubId } = req.params; // 🔥 ACA ESTABA EL ERROR
-    const professorClubIds = req.user.clubIds || [];
+    const { clubId } = req.params;
+
+    // Leemos los clubIds del header enviado por el frontend
+    const professorClubIds = JSON.parse(req.headers["x-professor-clubs"] || "[]");
 
     if (!clubId) {
-      return res.status(400).json({
-        message: "Debe especificar el club",
-      });
+      return res.status(400).json({ message: "Debe especificar el club" });
     }
 
     if (!professorClubIds.includes(clubId)) {
-      return res.status(403).json({
-        message: "El profesor no pertenece a este club",
-      });
+      return res.status(403).json({ message: "El profesor no pertenece a este club" });
     }
 
     const snapshot = await db
       .collection("jugadores")
-      .where("status", "in", ["PENDIENTE", "INCOMPLETO"])
+      .where("status", "in", ["PENDIENTE"])
       .get();
 
     const pendingPlayers = [];
@@ -204,9 +202,7 @@ const getPendingPlayers = async (req, res) => {
       const data = doc.data();
 
       const pendingClub = (data.clubs || []).find(
-        (club) =>
-          club.clubId === clubId &&
-          club.status === "INCOMPLETO"
+        (club) => club.clubId === clubId && club.status === "PENDIENTE"
       );
 
       if (pendingClub) {
@@ -223,9 +219,7 @@ const getPendingPlayers = async (req, res) => {
     return res.json(pendingPlayers);
   } catch (err) {
     console.error("❌ ERROR getPendingPlayers:", err);
-    return res.status(500).json({
-      message: "Error interno del servidor",
-    });
+    return res.status(500).json({ message: "Error interno del servidor" });
   }
 };
 
@@ -847,9 +841,12 @@ const updateMyCoachProfile = async (req, res) => {
 // Profesores aprueban/rechazan jugadores de su club
 const validatePlayersInClub = async (req, res) => {
   try {
-    const { userId, action } = req.body; // action = "APPROVE" | "REJECT"
-    const profesorClubId = req.user.clubId;
+    const { userId, clubId, action } = req.body; // action = "APPROVE" | "REJECT"
+    const profesorClubIds = req.user.clubs?.map(c => c.clubId) || [];
 
+    if (!clubId || !profesorClubIds.includes(clubId)) {
+      return res.status(403).json({ message: "No se puede validar" });
+    }
     // Buscamos usuario jugador
     const userRef = db.collection("usuarios").doc(userId);
     const userSnap = await userRef.get();
@@ -858,30 +855,26 @@ const validatePlayersInClub = async (req, res) => {
     const userData = userSnap.data();
 
     if (!userData.roles?.jugador) return res.status(400).json({ message: "Usuario no tiene rol jugador" });
-
-    // Solo podemos actualizar estado del jugador en el club del profesor
-    const jugadorRol = userData.roles.jugador.find(j => j.clubId === profesorClubId);
-    if (!jugadorRol) return res.status(400).json({ message: "El jugador no pertenece a tu club" });
-
+    
     const newEstado = action === "APPROVE" ? "ACTIVO" : "RECHAZADO";
+    const updateUserClub = (userData.clubs || []).map(c => { if (c.clubId === clubId) return { ...c, status: action === "APPROVE" ? "ACTIVO" : "RECHAZADO" }; return c; });
 
-    // Actualizamos estado en usuarios
-    const updatedRoles = { ...userData.roles };
-    updatedRoles.jugador = updatedRoles.jugador.map(j => {
-      if (j.clubId === profesorClubId) j.estado = newEstado;
-      return j;
-    });
-
-    await userRef.update({ roles: updatedRoles, updatedAt: new Date() });
+    await userRef.update({ clubs: updateUserClub, updatedAt: new Date() });
 
     // Actualizamos estado en colección jugadores
     const playerRef = db.collection("jugadores").doc(userId);
+    const playerSnap = await playerRef.get();
+    if (!playerSnap.exists) return res.status(404).json({ message: "Jugador no encontrado" });
+
+    const playerData = playerSnap.data();
+
+    const updatePlayerClubs = (playerData.clubs || []).map(c => { if (c.clubId === clubId) return { ...c, status: newEstado, updatedAt: new Date() }; return c; });
     await playerRef.update({
-      estado: newEstado,
       updatedAt: new Date(),
+      clubs: updatePlayerClubs
     });
 
-    res.json({ success: true, estado: newEstado });
+    res.json({ success: true, status: newEstado });
   } catch (err) {
     console.error("❌ ERROR validatePlayersInClub (Profesor):", err);
     res.status(500).json({ message: err.message });

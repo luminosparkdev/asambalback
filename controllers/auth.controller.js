@@ -48,6 +48,12 @@ const login = async (req, res) => {
     const userDoc = userSnap.docs[0];
     const userData = userDoc.data();
 
+    if (userData.status !== "ACTIVO") {
+  return res.status(403).json({
+    message: "Tu cuenta aún no ha sido validada por un profesor"
+  });
+}
+
     const roles = Array.isArray(userData.roles)
       ? userData.roles
       : Object.values(userData.roles || {});

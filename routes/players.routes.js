@@ -29,7 +29,7 @@ router.post(
 
 // VALIDAR / RECHAZAR JUGADOR (solo profesor)
 router.patch(
-  "/:id/validate",
+  "/:id/validate-player",
   authMiddleware,
   requireRole("profesor"),
   validatePlayer
