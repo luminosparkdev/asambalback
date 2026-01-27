@@ -29,7 +29,9 @@ const createPlayer = async (req, res) => {
       return res.status(400).json({ message: "Faltan datos" });
     }
 
-    console.log("req.user.id:", req.user.id);
+    const coachId = req.user.id;
+
+    console.log("req.user.id (coachId):", coachId);
     console.log("clubId recibido:", clubId);
 
     // --- 2. Validar que el profesor tiene el club seleccionado ---
@@ -37,7 +39,7 @@ const createPlayer = async (req, res) => {
 
     // Si es profesor y no tiene clubIds en token, lo buscamos en Firestore
     if (req.user.roles.includes("profesor") && profesorClubIds.length === 0) {
-      const profSnap = await db.collection("profesores").where("userId", "==", req.user.id).limit(1).get();
+      const profSnap = await db.collection("profesores").where("userId", "==", coachId).limit(1).get();
       if (!profSnap.empty) {
         const profData = profSnap.docs[0].data();
         profesorClubIds = profData.clubs?.map(c => c.clubId) || [];
@@ -84,7 +86,7 @@ const createPlayer = async (req, res) => {
           // El jugador existe pero no tiene el club seleccionado
           return res.status(200).json({
             code: "JUGADOR_EXISTENTE_OTRO_CLUB",
-            message: "El jugador pertenece a otro club. Desea iniciar solicitud de pase?",
+            message: "El jugador pertenece a otro club. ¿Desea iniciar solicitud de pase?",
             userId: userDoc.id,
           });
         } else {
@@ -117,14 +119,14 @@ const createPlayer = async (req, res) => {
     if (req.user.roles.includes("profesor")) {
       const profSnap = await db
         .collection("profesores")
-        .where("userId", "==", req.user.id)
+        .where("userId", "==", coachId)
         .limit(1)
         .get();
 
       if (!profSnap.empty) {
         const profData = profSnap.docs[0].data();
         const club = profData.clubs?.find((c) => c.clubId === clubId);
-        nombreClub = club?.nombre || nombreClub;
+        nombreClub = club?.nombreClub || club?.nombre || nombreClub;
       }
     }
 
@@ -153,6 +155,7 @@ const createPlayer = async (req, res) => {
         apellido,
         email,
         userId: userRef.id,
+        coachId, // <-- aquí asignamos coachId plano para facilitar consultas
         status: "INCOMPLETO",
         updatedAt: now,
         clubs: [
@@ -196,11 +199,7 @@ const getPlayers = async (req, res) => {
 };
 
 const getPlayersByCoach = async (req, res) => {
-  const { coachId } = req.user;
-
-  if (!coachId) {
-    return res.status(400).json({ message: "CoachId no proporcionado" });
-  }
+  const coachId = req.user.id;
 
   try {
       const snapshot = await db
@@ -309,9 +308,10 @@ const togglePlayerStatus = async (req, res) => {
 const completePlayerProfile = async (req, res) => {
   try {
     const { playerId } = req.params;
-    const { activationToken, form, tutor } = req.body;
+    const { activationToken, form, tutor, clubId, nombreClub, categorias } = req.body;
 
-    if (!playerId || !activationToken || !form) {
+    // --- 1️⃣ Validaciones ---
+    if (!playerId || !activationToken || !form || !clubId || !categorias || categorias.length === 0) {
       return res.status(400).json({ message: "Faltan datos obligatorios" });
     }
 
@@ -334,42 +334,72 @@ const completePlayerProfile = async (req, res) => {
 
       const now = new Date();
 
-      // Roles usuario
+      // --- Roles usuario ---
       const updatedRoles = Array.isArray(userData.roles)
         ? userData.roles
         : Object.values(userData.roles || {});
       if (!updatedRoles.includes("jugador")) updatedRoles.push("jugador");
 
-      // 1️⃣ Actualizamos usuario
+      // --- 2️⃣ Actualizar usuario ---
+      // Mantenemos los clubs existentes y agregamos o actualizamos el nuevo club
+      let updatedUserClubs = userData.clubs || [];
+      const existingClubIndex = updatedUserClubs.findIndex(c => c.clubId === clubId);
+
+      if (existingClubIndex >= 0) {
+        // Actualizamos club existente
+        updatedUserClubs[existingClubIndex] = {
+          ...updatedUserClubs[existingClubIndex],
+          categorias,
+          nombreClub,
+          status: "PENDIENTE",
+          updatedAt: now,
+        };
+      } else {
+        // Agregamos nuevo club
+        updatedUserClubs.push({
+          clubId,
+          nombreClub,
+          categorias,
+          status: "PENDIENTE",
+          updatedAt: now,
+        });
+      }
+
       tx.update(userRef, {
         status: "PENDIENTE",
         roles: updatedRoles,
         updatedAt: now,
         activationToken: null,
-        clubs: [
-          {
-            clubId,
-            nombreClub,
-            categorias,
-            status: "PENDIENTE",
-            updatedAt: now,
-          }
-        ]
+        clubs: updatedUserClubs,
       });
 
-      // 2️⃣ Actualizamos jugador
-      // Mantenemos clubs intactos y solo cambiamos su status a PENDIENTE
-      const updatedClubs = (playerData.clubs || []).map((club) => ({
-        ...club,
-        status: "PENDIENTE",
-        updatedAt: now,
-      }));
+      // --- 3️⃣ Actualizar jugador ---
+      let updatedPlayerClubs = playerData.clubs || [];
+      const existingPlayerClubIndex = updatedPlayerClubs.findIndex(c => c.clubId === clubId);
+
+      if (existingPlayerClubIndex >= 0) {
+        updatedPlayerClubs[existingPlayerClubIndex] = {
+          ...updatedPlayerClubs[existingPlayerClubIndex],
+          categorias,
+          nombreClub,
+          status: "PENDIENTE",
+          updatedAt: now,
+        };
+      } else {
+        updatedPlayerClubs.push({
+          clubId,
+          nombreClub,
+          categorias,
+          status: "PENDIENTE",
+          updatedAt: now,
+        });
+      }
 
       tx.update(playerRef, {
-        ...form, // merge del formulario sin tocar clubs ni status
+        ...form, // merge del formulario
         tutor: tutor || null,
         status: "PENDIENTE",
-        clubs: updatedClubs,
+        clubs: updatedPlayerClubs,
         updatedAt: now,
       });
     });
