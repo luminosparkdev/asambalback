@@ -11,6 +11,8 @@ const {
   getPlayerDetailAsambal,
   grantScholarship,
   revokeScholarship,
+  getAllCoachesAsambal,
+  getCoachDetailAsambal
 } = require("../controllers/asambal.controller");
 const { createClubWithAdmin } = require("../controllers/clubs.controller");
 
@@ -76,6 +78,22 @@ router.post(
   authMiddleware,
   requireRole("admin_asambal"),
   revokeScholarship
+);
+
+//PROFESORES
+
+router.get(
+  "/coaches",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getAllCoachesAsambal
+);
+
+router.get(
+  "/coaches/:id",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getCoachDetailAsambal
 );
 
 module.exports = router;
