@@ -251,5 +251,51 @@ const revokeScholarship = async (req, res) => {
   }
 };
 
+//FUNCION PARA CONSULTAR TODOS LOS PROFESORES
+const getAllCoachesAsambal = async (req, res) => {
+  try {
+    const snapshot = await db.collection("profesores").get();
 
-module.exports = { getPendingUsers, validateUser, getMyAsambalProfile, updateMyAsambalProfile, getAllPlayersAsambal, getPlayerDetailAsambal, grantScholarship, revokeScholarship };
+    const coaches = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...serializeTimestamps(doc.data()),
+    }));
+
+    res.json(coaches);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+//FUNCION PARA CONSULTAR PROFESOR POR ID
+const getCoachDetailAsambal = async (req, res) => {
+  try {
+    const doc = await db.collection("profesores").doc(req.params.id).get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Coach no encontrado" });
+    }
+
+    res.json({
+      id: doc.id,
+      ...serializeTimestamps(doc.data()),
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+module.exports = { 
+  getPendingUsers, 
+  validateUser, 
+  getMyAsambalProfile, 
+  updateMyAsambalProfile, 
+  getAllPlayersAsambal, 
+  getPlayerDetailAsambal, 
+  grantScholarship, 
+  revokeScholarship,
+  getAllCoachesAsambal,
+  getCoachDetailAsambal };
