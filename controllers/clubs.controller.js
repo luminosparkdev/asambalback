@@ -113,49 +113,50 @@ const toggleClubStatus = async (req, res) => {
     const { id } = req.params;
     const clubRef = db.collection("clubes").doc(id);
 
-    let newStatus = null;
+    // Obtener el club
+    const snap = await clubRef.get();
+    if (!snap.exists) {
+      return res.status(404).json({ message: "Club no encontrado" });
+    }
 
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(clubRef);
+    const currentStatus = snap.data().status;
 
-      if (!snap.exists) {
-        throw new Error("Club no encontrado");
-      }
+    if (!["ACTIVO", "INACTIVO"].includes(currentStatus)) {
+      return res.status(400).json({ message: `No se puede cambiar el estado del club desde ${currentStatus}` });
+    }
 
-      const currentStatus = snap.data().status;
+    const newStatus = currentStatus === "ACTIVO" ? "INACTIVO" : "ACTIVO";
 
-      if (!["ACTIVO", "INACTIVO"].includes(currentStatus)) {
-        throw new Error(`No se puede cambiar el estado del club desde ${currentStatus}`);
-      }
+    // --- Batch para actualizar club y usuarios ---
+    const batch = db.batch();
 
-      newStatus = currentStatus === "ACTIVO" ? "INACTIVO" : "ACTIVO";
+    // Actualizar club
+    batch.update(clubRef, {
+      status: newStatus,
+      updatedAt: new Date(),
+    });
 
-      tx.update(clubRef, {
+    // Actualizar todos los usuarios del club
+    const userSnap = await db.collection("usuarios")
+      .where("clubId", "==", id)
+      .get();
+
+    userSnap.docs.forEach(doc => {
+      batch.update(doc.ref, {
         status: newStatus,
         updatedAt: new Date(),
       });
-
-      if (newStatus === "INACTIVO") {
-        const userSnap = await db
-          .collection("usuarios")
-          .where("clubId", "==", id)
-          .where("status", "==", "ACTIVO")
-          .get();
-
-        userSnap.forEach(doc => {
-          tx.update(doc.ref, {
-            status: "INACTIVO",
-            updatedAt: new Date(),
-          });
-        });
-      }
     });
+
+    // Ejecutar batch
+    await batch.commit();
 
     res.json({
       success: true,
       status: newStatus,
     });
   } catch (err) {
+    console.error("Error en toggleClubStatus:", err);
     res.status(500).json({ message: err.message });
   }
 };

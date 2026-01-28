@@ -50,7 +50,7 @@ const login = async (req, res) => {
 
     if (userData.status !== "ACTIVO") {
   return res.status(403).json({
-    message: "Tu cuenta aún no ha sido validada por un profesor"
+    message: "Tu cuenta aún no ha sido validada"
   });
 }
 
