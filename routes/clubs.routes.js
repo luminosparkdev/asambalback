@@ -13,7 +13,8 @@ const {
   updateClub,
   completeClubProfile,
   getMyClubProfile,
-  updateMyClub
+  updateMyClub,
+  getPlayersByClub
 } = require("../controllers/clubs.controller");
 const { sendRequestJoinToCoach } = require("../controllers/coaches.controller");
 
@@ -42,6 +43,14 @@ router.post("/create-player",
     req.body.role = "jugador";
     createUser(req, res);
   });
+
+// LISTAR TODOS LOS JUGADORES DEL CLUB (admin_club)
+router.get(
+  "/players-by-club",
+  authMiddleware,
+  //requireRole("admin_club"),
+  getPlayersByClub
+);
 
 // -------------------- PERFIL Y COMPLETAR PERFIL --------------------
 

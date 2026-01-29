@@ -6,7 +6,6 @@ const requireRole = require("../middlewares/requireRole.middleware");
 
 const {
   createPlayer,
-  getPlayers,
   getPlayersByCoach,
   getMyPlayerProfile,
   getPlayerById,
@@ -80,14 +79,6 @@ router.post(
   authMiddleware,
   requireRole("profesor", "admin_club"),
   createPlayer
-);
-
-// LISTAR TODOS LOS JUGADORES DEL CLUB (admin_club)
-router.get(
-  "/",
-  authMiddleware,
-  requireRole("admin_club"),
-  getPlayers
 );
 
 // OBTENER PERFIL PROPIO (jugador)

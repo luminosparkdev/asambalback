@@ -463,4 +463,32 @@ const getPendingCoach = async (req, res) => {
   }
 };
 
-module.exports = { createClubWithAdmin, getClubs, toggleClubStatus, getClubById, updateClub, completeClubProfile, getMyClubProfile, updateMyClub, validateRoleInClub, getPendingCoach };
+const getPlayersByClub = async (req, res) => {
+  try {
+    // Club que administra el admin (solo 1)
+    const clubId = req.user.clubs?.[0]?.clubId;
+    console.log("Admin Club ID:", clubId);
+    if (!clubId) {
+      return res.status(403).json({ message: "No tiene clubes asignados" });
+    }
+    
+    const snapshot = await db.collection("jugadores").where("clubId", "==", clubId).get();
+    console.log("Documentos encontrados:", snapshot.size);
+    const players = snapshot.docs.map(doc => ({ 
+      id: doc.id, 
+      ...doc.data(),
+      createdAt: normalizeDate(doc.data().createdAt),
+      updatedAt: normalizeDate(doc.data().updatedAt),
+    }));
+    res.json(players);
+  } catch (err) {
+    console.error("❌ ERROR getPlayersByClub:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+
+
+
+module.exports = { createClubWithAdmin, getClubs, toggleClubStatus, getClubById, updateClub, completeClubProfile, getMyClubProfile, updateMyClub, validateRoleInClub, getPendingCoach, getPlayersByClub };

@@ -9,6 +9,8 @@ const {
   updateMyAsambalProfile,
   getAllPlayersAsambal,
   getPlayerDetailAsambal,
+  getPlayersWithScholarship,
+  getPlayerScholarshipHistory,
   grantScholarship,
   revokeScholarship,
   getAllCoachesAsambal,
@@ -66,6 +68,22 @@ router.get(
   getPlayerDetailAsambal
 );
 
+//BECAS
+
+router.get(
+  "/players-with-scholarship",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getPlayersWithScholarship
+);
+
+router.get(
+  "/players/:id/scholarships",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getPlayerScholarshipHistory
+);
+
 router.post(
   "/players/:id/grant-scholarship",
   authMiddleware,
@@ -74,7 +92,7 @@ router.post(
 );
 
 router.post(
-  "/players/:id/revoke-scholarship",
+  "/becas/:becaId/revoke-scholarship",
   authMiddleware,
   requireRole("admin_asambal"),
   revokeScholarship
