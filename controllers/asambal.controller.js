@@ -1,5 +1,6 @@
 const { db } = require("../config/firebase");
 const { createAuthUserIfNotExists } = require("../utils/firebaseAuth");
+const admin = require("firebase-admin");
 
 const serializeTimestamps = (data) => {
   const result = {};
@@ -11,6 +12,12 @@ const serializeTimestamps = (data) => {
     }
   }
   return result;
+};
+
+const calcularVencimiento = () => {
+  const now = new Date();
+  const year = now.getMonth() >= 1 ? now.getFullYear() + 1 : now.getFullYear();
+  return new Date(year, 1, 28, 23, 59, 59);
 };
 
 //FUNCION PARA OBTENER EL PERFIL DEL ADMIN ASAMBAL
@@ -200,54 +207,177 @@ const getPlayerDetailAsambal = async (req, res) => {
   }
 };
 
-//FUNCION PARA BECAR JUGADORES
-const grantScholarship = async (req, res) => {
+//FUNCION PARA CONSULTAR JUGADORES BECADOS
+const getPlayersWithScholarship = async (req, res) => {
   try {
-    const ref = db.collection("jugadores").doc(req.params.id);
-    const snap = await ref.get();
+    const snapshot = await db
+      .collection("becas")
+      .where("estado", "==", "ACTIVA")
+      .get();
 
-    if (!snap.exists) {
-      return res.status(404).json({ message: "Jugador no encontrado" });
-    }
+    const becados = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...serializeTimestamps(doc.data()),
+    }));
 
-    await ref.update({
-      becado: true,
-      habilitadoParaJugar: true,
-      motivoInhabilitacion: null,
-      fechaHabilitacion: new Date(),
-      updatedAt: new Date(),
-    });
-
-    res.json({ message: "Jugador becado y habilitado correctamente" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: err.message });
+    res.json(becados);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error al obtener becados" });
   }
 };
 
+//FUNCION PARA CONSULTAR EL HISTORIAL DE BECAS DE UN JUGADOR
+const getPlayerScholarshipHistory = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const becasSnap = await db
+      .collection("becas")
+      .where("playerId", "==", id)
+      .orderBy("fechaOtorgamiento", "desc")
+      .get();
+
+    const becas = becasSnap.docs.map(doc => ({
+      id: doc.id,
+      ...serializeTimestamps(doc.data()),
+    }));
+
+    res.json(becas);
+  } catch (error) {
+    console.error("Error obteniendo historial de becas:", error);
+    res.status(500).json({ message: "Error al obtener historial de becas" });
+  }
+};
+
+//FUNCION PARA BECAR JUGADORES
+const grantScholarship = async (req, res) => {
+  try {
+    const { id: playerId } = req.params;
+    const asambalId = req.user.id;
+
+    const playerRef = db.collection("jugadores").doc(playerId);
+    const playerSnap = await playerRef.get();
+
+    if (!playerSnap.exists) {
+      return res.status(404).json({ message: "Jugador no encontrado" });
+    }
+
+    const player = playerSnap.data();
+
+    // 🔒 Validar que NO tenga una beca activa
+    const activeBecaSnap = await db
+      .collection("becas")
+      .where("playerId", "==", playerId)
+      .where("estado", "==", "ACTIVA")
+      .limit(1)
+      .get();
+
+    if (!activeBecaSnap.empty) {
+      return res.status(400).json({
+        message: "El jugador ya tiene una beca activa",
+      });
+    }
+
+    const club = player.clubs?.[0]; // regla actual
+    const now = admin.firestore.Timestamp.now();
+
+    const beca = {
+      playerId,
+      nombre: player.nombre,
+      apellido: player.apellido,
+
+      clubId: club?.clubId || null,
+      nombreClub: club?.nombreClub || null,
+      categorias: club?.categorias || [],
+
+      fechaOtorgamiento: now,
+      fechaVencimiento: calcularVencimiento(),
+      fechaRevocacion: null,
+
+      estado: "ACTIVA",
+      otorgadaPor: asambalId,
+
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const batch = db.batch();
+    const becaRef = db.collection("becas").doc();
+
+    batch.set(becaRef, beca);
+
+    batch.update(playerRef, {
+      becado: true,
+      habilitadoAsambal: true,
+      updatedAt: now,
+    });
+
+    await batch.commit();
+
+    res.json({
+      message: "Jugador becado correctamente",
+      becaId: becaRef.id,
+      playerId,
+    });
+  } catch (error) {
+    console.error("Error al becar jugador:", error);
+    res.status(500).json({ message: "Error al becar jugador" });
+  }
+};
 
 //FUNCION PARA QUITAR BECA A JUGADOR
 const revokeScholarship = async (req, res) => {
   try {
-    const ref = db.collection("jugadores").doc(req.params.id);
-    const snap = await ref.get();
+    const { becaId } = req.params;
 
-    if (!snap.exists) {
-      return res.status(404).json({ message: "Jugador no encontrado" });
+    const becaRef = db.collection("becas").doc(becaId);
+    const becaSnap = await becaRef.get();
+
+    if (!becaSnap.exists) {
+      return res.status(404).json({ message: "Beca no encontrada" });
     }
 
-    await ref.update({
-      becado: false,
-      habilitadoParaJugar: false,
-      motivoInhabilitacion: "EMPADRONAMIENTO_PENDIENTE",
-      fechaHabilitacion: null,
-      updatedAt: new Date(),
+    const beca = becaSnap.data();
+
+    if (beca.estado !== "ACTIVA") {
+      return res.status(400).json({ message: "La beca no está activa" });
+    }
+
+    const playerRef = db.collection("jugadores").doc(beca.playerId);
+    const playerSnap = await playerRef.get();
+
+    if (!playerSnap.exists) {
+      return res.status(404).json({
+        message: "Jugador asociado a la beca no encontrado",
+      });
+    }
+
+    const batch = db.batch();
+    const now = admin.firestore.Timestamp.now();
+
+    batch.update(becaRef, {
+      estado: "REVOCADA",
+      fechaRevocacion: now,
+      updatedAt: now,
     });
 
-    res.json({ message: "Beca removida correctamente" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: err.message });
+    batch.update(playerRef, {
+      becado: false,
+      habilitadoAsambal: false,
+      updatedAt: now,
+    });
+
+    await batch.commit();
+
+    res.json({
+      message: "Beca revocada correctamente",
+      becaId,
+      playerId: beca.playerId,
+    });
+  } catch (error) {
+    console.error("Error revocando beca:", error);
+    res.status(500).json({ message: "Error al revocar beca" });
   }
 };
 
@@ -287,7 +417,6 @@ const getCoachDetailAsambal = async (req, res) => {
   }
 };
 
-
 module.exports = { 
   getPendingUsers, 
   validateUser, 
@@ -295,6 +424,8 @@ module.exports = {
   updateMyAsambalProfile, 
   getAllPlayersAsambal, 
   getPlayerDetailAsambal, 
+  getPlayersWithScholarship,
+  getPlayerScholarshipHistory,
   grantScholarship, 
   revokeScholarship,
   getAllCoachesAsambal,

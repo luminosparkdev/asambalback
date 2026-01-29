@@ -238,7 +238,7 @@ const getMyClubs = async (req, res) => {
     // Retornamos clubId, nombreClub y categorias
     const simplified = clubs.map(c => ({
       clubId: c.clubId,
-      nombre: c.nombre,
+      nombreClub: c.nombreClub,
       categorias: c.categorias || []
     }));
 
@@ -248,7 +248,6 @@ const getMyClubs = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
 
 //SOLICITUDES PENDIENTES PARA EL PROFESOR
 const getMyCoachRequests = async (req, res) => {
@@ -311,7 +310,7 @@ const respondCoachRequest = async (req, res) => {
 
         clubs.push({
           clubId: reqData.clubId,
-          nombre: reqData.nombreClub,
+          nombreClub: reqData.nombreClub,
           categorias: reqData.categorias,
           status: "ACTIVO",
         });
@@ -395,15 +394,8 @@ const formatTimestamp = (ts) => {
 // OBTENER PROFESOR POR ID
 const getProfesorById = async (req, res) => {
   try {
-    console.log("REQ PARAMS:", req.params);
-    console.log("REQ HEADERS:", req.headers); // <--- acá vamos a ver X-club-id
     const { id } = req.params;
-    const clubId = req.headers["x-club-id"];
-
-    if (!clubId) {
-      console.log("No se recibió clubId en headers");
-      return res.status(400).json({ message: "Club ID requerido en headers" });
-    }
+    const clubId = req.user.clubId;
 
     const doc = await db.collection("profesores").doc(id).get();
 
@@ -415,7 +407,6 @@ const getProfesorById = async (req, res) => {
     const club = data.clubs?.find(c => c.clubId === clubId);
 
     if (!club) {
-      console.log("Profesor no pertenece al club:", clubId);
       return res.status(403).json({ message: "Acceso denegado" });
     }
 
@@ -428,24 +419,24 @@ const getProfesorById = async (req, res) => {
       domicilio: data.domicilio,
       enea: data.enea,
       dni: data.dni,
+
+      // datos dependientes del club
       status: club.status,
       categorias: club.categorias,
+
       createdAt: formatTimestamp(data.createdAt),
       updatedAt: formatTimestamp(data.updatedAt),
     });
   } catch (err) {
-    console.error("ERROR getProfesorById:", err);
     res.status(500).json({ message: err.message });
   }
 };
-
-
 
 // EDITAR PROFESOR
 const updateProfesor = async (req, res) => {
   try {
     const { id } = req.params;
-    const clubId = req.activeClub.clubId;
+    const clubId = req.user.clubId;
     const { categorias } = req.body;
 
     if (!categorias) {
@@ -491,7 +482,7 @@ const updateProfesor = async (req, res) => {
 const toggleProfesorStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const clubId = req.activeClub.clubId;
+    const clubId = req.user.clubId;
 
     const coachRef = db.collection("profesores").doc(id);
 
@@ -608,13 +599,7 @@ const completeProfesorProfile = async (req, res) => {
 const sendRequestJoinToCoach = async (req, res) => {
   try {
     const { email, nombre, apellido, categorias } = req.body;
-    const activeClub = req.user.clubs?.[0];
-
-    if (!activeClub) {
-      return res.status(400).json({ message: "Usuario sin club asignado" });
-    }
-
-    const { clubId, nombre: nombreClub } = activeClub;
+    const { clubId, nombreClub } = req.user; // admin_club que envía la solicitud
 
     if (!email || !nombre?.trim() || !apellido?.trim() || !Array.isArray(categorias) || categorias.length === 0) {
       return res.status(400).json({ message: "Datos incompletos" });
