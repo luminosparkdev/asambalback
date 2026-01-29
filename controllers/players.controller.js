@@ -182,22 +182,6 @@ const createPlayer = async (req, res) => {
   }
 };
 
-const getPlayers = async (req, res) => {
-  try {
-      const snapshot = await db.collection("jugadores").get();
-      const players = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt?.toDate().toISOString(),
-        updatedAt: doc.data().updatedAt?.toDate().toISOString(),
-      }));
-      res.json(players);
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ message: err.message });
-  }
-};
-
 const getPlayersByCoach = async (req, res) => {
   const coachId = req.user.id;
 
@@ -536,7 +520,6 @@ const updateMyPlayerProfile = async (req, res) => {
 
 module.exports = {
   createPlayer,
-  getPlayers,
   getPlayersByCoach,
   getPlayerById,
   updatePlayer,
