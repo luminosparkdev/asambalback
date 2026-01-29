@@ -15,7 +15,42 @@ const {
   completePlayerProfile,
   validatePlayer,
   updateMyPlayerProfile,
+
+  // TRANSFERENCIAS
+  sendTransferRequest,
+  getMyTransferRequests,
+  respondTransferRequest,
 } = require("../controllers/players.controller");
+
+// ==========================
+// TRANSFERENCIAS DE JUGADORES
+// ==========================
+
+// SOLICITAR PASE (admin_club)
+router.post(
+  "/transfers",
+  authMiddleware,
+  requireRole("admin_club"),
+  sendTransferRequest
+);
+
+// VER MIS SOLICITUDES DE PASE
+// admin_club / asambal / jugador (según lo que devuelva el controller)
+router.get(
+  "/transfers",
+  authMiddleware,
+  requireRole("admin_club", "jugador", "asambal"),
+  getMyTransferRequests
+);
+
+// RESPONDER SOLICITUD DE PASE
+// asambal o jugador
+router.patch(
+  "/transfers/:id/respond",
+  authMiddleware,
+  requireRole("asambal", "jugador"),
+  respondTransferRequest
+);
 
 // ==========================
 // RUTAS ESPECIALES

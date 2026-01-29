@@ -537,6 +537,121 @@ const updateMyPlayerProfile = async (req, res) => {
   }
 };
 
+// TRANSFERENCIAS DE JUGADORES
+
+// CLUB SOLICITA PASE
+const sendTransferRequest = async (req, res) => {
+  try {
+    const activeClub = req.user.clubs?.[0];
+    const { playerId } = req.body;
+
+    if (!activeClub) {
+      return res.status(400).json({ message: "Usuario sin club activo" });
+    }
+
+    const playerSnap = await db.collection("jugadores").doc(playerId).get();
+    if (!playerSnap.exists) {
+      return res.status(404).json({ message: "Jugador no encontrado" });
+    }
+
+    const playerData = playerSnap.data();
+
+    // Si ya es del club
+    if (playerData.clubId === activeClub.clubId) {
+      return res.status(400).json({ message: "El jugador ya pertenece al club" });
+    }
+
+    // Validar que no exista request pendiente
+    const existing = await db
+      .collection("transferRequests")
+      .where("playerId", "==", playerId)
+      .where("status", "==", "PENDIENTE_ASAMBAL")
+      .get();
+
+    if (!existing.empty) {
+      return res.status(400).json({ message: "Ya existe una solicitud pendiente" });
+    }
+
+    await db.collection("transferRequests").add({
+      playerId,
+      fromClubId: playerData.clubId,
+      toClubId: activeClub.clubId,
+      categorias: playerData.categorias || [],
+      status: "PENDIENTE_ASAMBAL",
+      createdAt: new Date(),
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ADMIN ASAMBAL APRUEBA PASE
+const getMyTransferRequests = async (req, res) => {
+  try {
+    const activeClub = req.user.clubs?.[0];
+
+    if (!activeClub) {
+      return res.status(400).json({ message: "Usuario sin club activo" });
+    }
+
+    const snap = await db
+      .collection("transferRequests")
+      .where("toClubId", "==", activeClub.clubId)
+      .where("status", "==", "PENDIENTE_ASAMBAL")
+      .get();
+
+    const data = snap.docs.map(d => ({
+      id: d.id,
+      ...d.data(),
+    }));
+
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// JUGADOR ACEPTA PASE
+const respondTransferRequest = async (req, res) => {
+  try {
+    const { action } = req.body;
+    const requestRef = db.collection("transferRequests").doc(req.params.id);
+
+    if (!["ACCEPT", "REJECT"].includes(action)) {
+      return res.status(400).json({ message: "Acción inválida" });
+    }
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(requestRef);
+      if (!snap.exists) throw new Error("Solicitud no encontrada");
+
+      const data = snap.data();
+      if (data.status !== "PENDIENTE_ASAMBAL") {
+        throw new Error("Solicitud ya procesada");
+      }
+
+      if (action === "ACCEPT") {
+        const playerRef = db.collection("jugadores").doc(data.playerId);
+        tx.update(playerRef, {
+          clubId: data.toClubId,
+          updatedAt: new Date(),
+        });
+      }
+
+      tx.update(requestRef, {
+        status: action === "ACCEPT" ? "ACEPTADA" : "RECHAZADA",
+        respondedAt: new Date(),
+      });
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   createPlayer,
   getPlayers,
@@ -548,4 +663,8 @@ module.exports = {
   validatePlayer,
   getMyPlayerProfile,
   updateMyPlayerProfile,
+  // TRANSFERENCIAS DE JUGADORES
+  sendTransferRequest,
+  getMyTransferRequests,
+  respondTransferRequest,
 };
