@@ -14,9 +14,18 @@ const {
   completeClubProfile,
   getMyClubProfile,
   updateMyClub,
-  getPlayersByClub
+  getPlayersByClub,
+  createOrTransferPlayer
 } = require("../controllers/clubs.controller");
 const { sendRequestJoinToCoach } = require("../controllers/coaches.controller");
+
+// --- CREAR JUGADOR DESDE ADMIN CLUB ---
+router.post(
+  "/create-player",
+  authMiddleware,
+  requireRole("admin_club"),
+  createOrTransferPlayer
+);
 
 // -------------------- CREACIÓN DE USUARIOS --------------------
 
@@ -41,8 +50,30 @@ router.post("/create-player",
   requireRole("admin_club"),
   (req, res) => {
     req.body.role = "jugador";
+    req.body.clubId = req.user.clubId;
     createUser(req, res);
   });
+
+// CATEGORIAS
+router.get(
+  "/my/categories",
+  authMiddleware,
+  requireRole("admin_club"),
+  async (req, res) => {
+    try {
+      const categoriasSnap = await db
+        .collection("categorias")
+        .where("clubId", "==", req.user.clubId)
+        .get();
+
+      const categorias = categoriasSnap.docs.map(doc => doc.data().nombre);
+
+      res.json(categorias);
+    } catch (error) {
+      res.status(500).json({ message: "Error al obtener categorías" });
+    }
+  }
+);
 
 // LISTAR TODOS LOS JUGADORES DEL CLUB (admin_club)
 router.get(

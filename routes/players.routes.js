@@ -16,7 +16,7 @@ const {
   updateMyPlayerProfile,
 
   // TRANSFERENCIAS
-  sendTransferRequest,
+  // sendTransferRequest,
   getMyTransferRequests,
   respondTransferRequest,
 } = require("../controllers/players.controller");
@@ -26,12 +26,12 @@ const {
 // ==========================
 
 // SOLICITAR PASE (admin_club)
-router.post(
-  "/transfers",
-  authMiddleware,
-  requireRole("admin_club"),
-  sendTransferRequest
-);
+// router.post(
+//   "/transfers",
+//   authMiddleware,
+//   requireRole("admin_club"),
+//   sendTransferRequest
+// );
 
 // VER MIS SOLICITUDES DE PASE
 // admin_club / asambal / jugador (según lo que devuelva el controller)

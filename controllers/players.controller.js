@@ -523,53 +523,53 @@ const updateMyPlayerProfile = async (req, res) => {
 
 // TRANSFERENCIAS DE JUGADORES
 
-// CLUB SOLICITA PASE
-const sendTransferRequest = async (req, res) => {
-  try {
-    const activeClub = req.user.clubs?.[0];
-    const { playerId } = req.body;
+// CLUB SOLICITA PASE ME LO LLEVE A CLUBS CONTROLLER
+// const sendTransferRequest = async (req, res) => {
+//   try {
+//     const activeClub = req.user.clubs?.[0];
+//     const { playerId } = req.body;
 
-    if (!activeClub) {
-      return res.status(400).json({ message: "Usuario sin club activo" });
-    }
+//     if (!activeClub) {
+//       return res.status(400).json({ message: "Usuario sin club activo" });
+//     }
 
-    const playerSnap = await db.collection("jugadores").doc(playerId).get();
-    if (!playerSnap.exists) {
-      return res.status(404).json({ message: "Jugador no encontrado" });
-    }
+//     const playerSnap = await db.collection("jugadores").doc(playerId).get();
+//     if (!playerSnap.exists) {
+//       return res.status(404).json({ message: "Jugador no encontrado" });
+//     }
 
-    const playerData = playerSnap.data();
+//     const playerData = playerSnap.data();
 
-    // Si ya es del club
-    if (playerData.clubId === activeClub.clubId) {
-      return res.status(400).json({ message: "El jugador ya pertenece al club" });
-    }
+//     // Si ya es del club
+//     if (playerData.clubId === activeClub.clubId) {
+//       return res.status(400).json({ message: "El jugador ya pertenece al club" });
+//     }
 
-    // Validar que no exista request pendiente
-    const existing = await db
-      .collection("transferRequests")
-      .where("playerId", "==", playerId)
-      .where("status", "==", "PENDIENTE_ASAMBAL")
-      .get();
+//     // Validar que no exista request pendiente
+//     const existing = await db
+//       .collection("transferRequests")
+//       .where("playerId", "==", playerId)
+//       .where("status", "==", "PENDIENTE_ASAMBAL")
+//       .get();
 
-    if (!existing.empty) {
-      return res.status(400).json({ message: "Ya existe una solicitud pendiente" });
-    }
+//     if (!existing.empty) {
+//       return res.status(400).json({ message: "Ya existe una solicitud pendiente" });
+//     }
 
-    await db.collection("transferRequests").add({
-      playerId,
-      fromClubId: playerData.clubId,
-      toClubId: activeClub.clubId,
-      categorias: playerData.categorias || [],
-      status: "PENDIENTE_ASAMBAL",
-      createdAt: new Date(),
-    });
+//     await db.collection("transferRequests").add({
+//       playerId,
+//       fromClubId: playerData.clubId,
+//       toClubId: activeClub.clubId,
+//       categorias: playerData.categorias || [],
+//       status: "PENDIENTE_ASAMBAL",
+//       createdAt: new Date(),
+//     });
 
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-};
+//     res.json({ success: true });
+//   } catch (err) {
+//     res.status(500).json({ message: err.message });
+//   }
+// };
 
 // ADMIN ASAMBAL APRUEBA PASE
 const getMyTransferRequests = async (req, res) => {
@@ -647,7 +647,7 @@ module.exports = {
   getMyPlayerProfile,
   updateMyPlayerProfile,
   // TRANSFERENCIAS DE JUGADORES
-  sendTransferRequest,
+  // sendTransferRequest,
   getMyTransferRequests,
   respondTransferRequest,
 };

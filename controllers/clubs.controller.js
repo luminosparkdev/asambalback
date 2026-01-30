@@ -69,6 +69,131 @@ const createClubWithAdmin = async (req, res) => {
   }
 };
 
+//CREAMOS JUGADOR CON ADMIN CLUB, SI EXISTE SE SOLICITA PASE AL CLUB ORIGEN
+const createOrTransferPlayer = async (req, res) => {
+  try {
+    const { nombre, apellido, email, categorias } = req.body;
+const userId = req.user.id;
+const clubId = req.user.clubs?.[0]?.clubId;        // 🔑 viene del token
+const nombreClub = req.user.nombreClub || "Nombre del club";
+console.log("REQ.USER =>", req.user);
+    // Validaciones básicas
+if (!clubId) {
+  return res.status(403).json({
+    message: "El administrador no tiene un club activo",
+  });
+}
+    if (!nombre?.trim() || !apellido?.trim() || !email?.trim() || !Array.isArray(categorias) || categorias.length === 0) {
+      return res.status(400).json({ message: "Faltan datos" });
+    }
+
+    // Verifico si ya existe usuario con ese email
+    const userSnap = await db.collection("usuarios").where("email", "==", email).limit(1).get();
+
+    if (!userSnap.empty) {
+      const userDoc = userSnap.docs[0];
+      const jugadorSnap = await db.collection("jugadores").doc(userDoc.id).get();
+
+      if (jugadorSnap.exists) {
+        const jugadorData = jugadorSnap.data();
+
+        // Verifico si jugador ya en este club
+        const clubExistente = jugadorData.clubs.find(c => c.clubId === clubId);
+        if (clubExistente) {
+          return res.status(400).json({ message: "El jugador ya existe en este club." });
+        }
+
+        // Verifico si hay solicitud pendiente
+        const existingRequests = await db.collection("transferRequests")
+          .where("jugadorId", "==", userDoc.id)
+          .where("status", "==", "PENDIENTE")
+          .get();
+
+        if (!existingRequests.empty) {
+          return res.status(400).json({ message: "Ya existe una solicitud de pase pendiente." });
+        }
+
+        // Creo solicitud de pase
+        await db.collection("transferRequests").add({
+          jugadorId: userDoc.id,
+          clubOrigen: jugadorData.clubs[0],
+          clubDestino: { clubId, nombreClub },
+          jugadorNombre: `${jugadorData.nombre} ${jugadorData.apellido}`,
+          categorias,
+          status: "PENDIENTE",
+          createdAt: new Date(),
+        });
+
+        return res.status(200).json({
+          code: "SOLICITUD_PENDIENTE",
+          message: "El jugador pertenece a otro club. Se ha iniciado la solicitud de pase.",
+        });
+      }
+    }
+
+    // Crear nuevo jugador si no existe
+    const activationToken = generateActivationToken();
+    const userRef = db.collection("usuarios").doc();
+    const jugadorRef = db.collection("jugadores").doc(userRef.id);
+    const now = new Date();
+
+    await db.runTransaction(async (tx) => {
+      tx.set(userRef, {
+        email,
+        roles: ["jugador"],
+        status: "INCOMPLETO",
+        activationToken,
+        createdBy: req.user.email,
+        createdAt: now,
+        updatedAt: now,
+        clubs: [
+          {
+            clubId,
+            nombreClub,
+            categorias,
+            status: "INCOMPLETO",
+            updatedAt: now,
+          },
+        ],
+      });
+
+      tx.set(jugadorRef, {
+        nombre,
+        apellido,
+        email,
+        userId: userRef.id,
+        status: "INCOMPLETO",
+        habilitadoAsambal: false,
+        becado: false,
+        createdAt: now,
+        updatedAt: now,
+        clubId,
+        clubs: [
+          {
+            clubId,
+            nombreClub,
+            categorias,
+            status: "INCOMPLETO",
+            updatedAt: now,
+          },
+        ],
+      });
+    });
+
+    await sendActivationEmail(email, activationToken, email);
+
+    return res.status(200).json({
+      code: "JUGADOR_CREADO",
+      message: "Jugador creado exitosamente.",
+      userId: userRef.id,
+    });
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: error.message });
+  }
+};
+
 //NORMALIZAMOS FECHAS
 const normalizeDate = (value) => {
   if (!value) return null;
@@ -491,4 +616,4 @@ const getPlayersByClub = async (req, res) => {
 
 
 
-module.exports = { createClubWithAdmin, getClubs, toggleClubStatus, getClubById, updateClub, completeClubProfile, getMyClubProfile, updateMyClub, validateRoleInClub, getPendingCoach, getPlayersByClub };
+module.exports = { createClubWithAdmin, createOrTransferPlayer, getClubs, toggleClubStatus, getClubById, updateClub, completeClubProfile, getMyClubProfile, updateMyClub, validateRoleInClub, getPendingCoach, getPlayersByClub };
