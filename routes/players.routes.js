@@ -18,6 +18,8 @@ const {
   // TRANSFERENCIAS
   // sendTransferRequest,
   getMyTransferRequests,
+  respondTransferRequestAdmin,
+  getMyPendingTransfers,
   respondTransferRequest,
 } = require("../controllers/players.controller");
 
@@ -42,14 +44,37 @@ router.get(
   getMyTransferRequests
 );
 
-// RESPONDER SOLICITUD DE PASE
-// asambal o jugador
+
+// ACA ARRANCA JUGADOR
 router.patch(
   "/transfers/:id/respond",
+  authMiddleware,
+  requireRole("admin_asambal"), // o como lo tengas definido
+  respondTransferRequestAdmin
+);
+
+router.use((req, res, next) => {
+  console.log("➡️ PLAYER ROUTER:", req.method, req.originalUrl);
+  next();
+});
+
+router.get(
+  "/transfers/player",
+  authMiddleware,
+  requireRole("jugador"),
+  getMyPendingTransfers
+);
+
+
+// RESPONDER SOLICITUD DE PASE
+router.patch(
+  "/transfers/player/:id/respond",
   authMiddleware,
   requireRole("asambal", "jugador"),
   respondTransferRequest
 );
+
+
 
 // ==========================
 // RUTAS ESPECIALES

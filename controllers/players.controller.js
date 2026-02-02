@@ -574,67 +574,231 @@ const updateMyPlayerProfile = async (req, res) => {
 // ADMIN ASAMBAL APRUEBA PASE
 const getMyTransferRequests = async (req, res) => {
   try {
-    const activeClub = req.user.clubs?.[0];
-
-    if (!activeClub) {
-      return res.status(400).json({ message: "Usuario sin club activo" });
-    }
-
-    const snap = await db
+    let query = db
       .collection("transferRequests")
-      .where("toClubId", "==", activeClub.clubId)
-      .where("status", "==", "PENDIENTE_ASAMBAL")
-      .get();
+      .where("status", "==", "PENDIENTE")
+      .orderBy("createdAt", "desc");
 
-    const data = snap.docs.map(d => ({
-      id: d.id,
-      ...d.data(),
-    }));
+    const snap = await query.get();
 
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
+    const categoriasCache = new Map();
+
+    const getCategoria = async (id) => {
+      if (categoriasCache.has(id)) return categoriasCache.get(id);
+
+      const doc = await db.collection("categorias").doc(id).get();
+      if (!doc.exists) return null;
+
+      const categoria = { id: doc.id, ...doc.data() };
+      categoriasCache.set(id, categoria);
+      return categoria;
+    };
+
+    const transfers = await Promise.all(
+      snap.docs.map(async doc => {
+        const data = doc.data();
+
+        const categorias = await Promise.all(
+          (data.categorias || []).map(id => getCategoria(id))
+        );
+
+return {
+  id: doc.id,
+  jugadorNombre: data.jugadorNombre || "-",
+  categorias: categorias.filter(Boolean),
+  clubOrigen: data.clubOrigen || { clubId: null, nombreClub: "-" },
+  clubDestino: data.clubDestino || { clubId: null, nombreClub: "-" },
+  status: data.status,
+  createdAt: data.createdAt || null,
+};
+
+      })
+    );
+
+    res.status(200).json(transfers);
+  } catch (error) {
+    console.error("Error getMyTransferRequests:", error);
+    res.status(500).json({ message: error.message });
   }
 };
 
-// JUGADOR ACEPTA PASE
-const respondTransferRequest = async (req, res) => {
+
+const respondTransferRequestAdmin = async (req, res) => {
   try {
     const { action } = req.body;
-    const requestRef = db.collection("transferRequests").doc(req.params.id);
 
     if (!["ACCEPT", "REJECT"].includes(action)) {
       return res.status(400).json({ message: "Acción inválida" });
     }
 
+    const requestRef = db.collection("transferRequests").doc(req.params.id);
+    const snap = await requestRef.get();
+
+    if (!snap.exists) {
+      return res.status(404).json({ message: "Solicitud no encontrada" });
+    }
+
+    const data = snap.data();
+
+    if (data.status !== "PENDIENTE") {
+      return res.status(400).json({
+        message: "La solicitud no está pendiente para el admin",
+      });
+    }
+
     await db.runTransaction(async (tx) => {
-      const snap = await tx.get(requestRef);
-      if (!snap.exists) throw new Error("Solicitud no encontrada");
-
-      const data = snap.data();
-      if (data.status !== "PENDIENTE_ASAMBAL") {
-        throw new Error("Solicitud ya procesada");
-      }
-
       if (action === "ACCEPT") {
-        const playerRef = db.collection("jugadores").doc(data.playerId);
-        tx.update(playerRef, {
-          clubId: data.toClubId,
-          updatedAt: new Date(),
+        tx.update(requestRef, {
+          status: "PENDIENTE_JUGADOR",
+          respondedAt: new Date(),
+        });
+      } else {
+        tx.update(requestRef, {
+          status: "RECHAZADO_ADMIN",
+          respondedAt: new Date(),
         });
       }
-
-      tx.update(requestRef, {
-        status: action === "ACCEPT" ? "ACEPTADA" : "RECHAZADA",
-        respondedAt: new Date(),
-      });
     });
 
-    res.json({ success: true });
+    return res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 };
+
+
+const getMyPendingTransfers = async (req, res) => {
+  console.log("ENTRÓ A GET MY PENDING TRANSFERS", req.user.id);
+  try {
+    const userId = req.user.id;
+
+    const snapshot = await db.collection("transferRequests")
+      .where("jugadorId", "==", userId)
+      .where("status", "==", "PENDIENTE_JUGADOR")
+      .get();
+
+    const transfers = await Promise.all(
+      snapshot.docs.map(async doc => {
+        const data = doc.data();
+
+        // --- Mapear categorías ---
+        const categorias = await Promise.all(
+          (data.categorias || []).map(async catId => {
+            const catDoc = await db.collection("categorias").doc(catId).get();
+            return catDoc.exists ? { id: catDoc.id, ...catDoc.data() } : null;
+          })
+        );
+
+        return {
+          id: doc.id,
+          jugadorNombre: data.jugadorNombre || "-",
+          categorias: categorias.filter(Boolean), // elimina nulls
+          clubOrigen: data.clubOrigen || { clubId: null, nombreClub: "-" },
+          clubDestino: data.clubDestino || { clubId: null, nombreClub: "-" },
+          status: data.status,
+          createdAt: data.createdAt || null,
+        };
+      })
+    );
+
+    return res.json(transfers);
+  } catch (err) {
+    console.error("Error getMyPendingTransfers:", err);
+    return res.status(500).json({ message: err.message });
+  }
+};
+
+
+// JUGADOR ACEPTA PASE
+const respondTransferRequest = async (req, res) => {
+  console.log("ENTRÓ A RESPOND TRANSFER", req.params.id);
+  try {
+    const { action } = req.body;
+
+    if (!["ACCEPT", "REJECT"].includes(action)) {
+      return res.status(400).json({ message: "Acción inválida" });
+    }
+
+    const requestRef = db.collection("transferRequests").doc(req.params.id);
+    const snap = await requestRef.get();
+
+    if (!snap.exists) {
+      return res.status(404).json({ message: "Solicitud no encontrada" });
+    }
+
+    const data = snap.data();
+console.log("USER ID:", req.user.id);
+console.log("JUGADOR ID REQUEST:", data.jugadorId);
+console.log("ROLES:", req.user.roles, typeof req.user.roles);
+    if (data.jugadorId !== req.user.id) {
+      return res.status(403).json({ message: "No es tu solicitud" });
+    }
+
+    const roles = Array.isArray(req.user.roles)
+  ? req.user.roles
+  : [req.user.roles];
+  
+    if (!req.user.roles.includes("jugador")) {
+      return res.status(403).json({ message: "No autorizado" });
+    }
+
+    if (data.status !== "PENDIENTE_JUGADOR") {
+      return res.status(400).json({ message: "La solicitud no está pendiente para el jugador" });
+    }
+
+    await db.runTransaction(async (tx) => {
+      const playerRef = db.collection("jugadores").doc(data.jugadorId);
+      const playerSnap = await tx.get(playerRef);
+
+      if (!playerSnap.exists) {
+        throw new Error("Jugador no encontrado");
+      }
+
+      const playerData = playerSnap.data();
+      const clubs = playerData.clubs || [];
+
+      if (action === "ACCEPT") {
+
+        // 1) Remover club origen
+        const updatedClubs = clubs.filter(c => c.clubId !== data.clubOrigen.clubId);
+
+        // 2) Agregar club destino
+        updatedClubs.push({
+          clubId: data.clubDestino.clubId,
+          nombreClub: data.clubDestino.nombreClub,
+          categorias: data.categorias || [],
+          status: "ACTIVO",
+          updatedAt: new Date()
+        });
+
+        tx.update(playerRef, {
+          clubId: data.clubDestino.clubId,
+          clubs: updatedClubs,
+          updatedAt: new Date(),
+        });
+
+        tx.update(requestRef, {
+          status: "PASE_CONFIRMADO",
+          respondedAt: new Date(),
+        });
+
+      } else {
+
+        tx.update(requestRef, {
+          status: "RECHAZADO_JUGADOR",
+          respondedAt: new Date(),
+        });
+
+      }
+    });
+
+    return res.json({ success: true });
+
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+};
+
 
 module.exports = {
   createPlayer,
@@ -649,5 +813,7 @@ module.exports = {
   // TRANSFERENCIAS DE JUGADORES
   // sendTransferRequest,
   getMyTransferRequests,
+  respondTransferRequestAdmin,
+  getMyPendingTransfers,
   respondTransferRequest,
 };

@@ -17,6 +17,7 @@ const {
   getCoachDetailAsambal
 } = require("../controllers/asambal.controller");
 const { createClubWithAdmin } = require("../controllers/clubs.controller");
+const {getMyTransferRequests} = require("../controllers/players.controller");
 
 //PERFIL ASAMBAL
 router.get("/me",
@@ -43,6 +44,13 @@ router.patch(
   authMiddleware,
   requireRole("admin_asambal"),
   validateUser
+);
+
+router.get(
+  "/transfers",
+  authMiddleware,
+  requireRole("admin_club", "admin_asambal"),
+  getMyTransferRequests
 );
 
 //CLUBES
