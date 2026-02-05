@@ -417,6 +417,70 @@ const getCoachDetailAsambal = async (req, res) => {
   }
 };
 
+//FUNCION PARA CREAR EMPADRONAMIENTO ASAMBAL
+const createEmpadronamiento = async (req, res) => {
+  try {
+    const { year, amount } = req.body;
+
+    if (!year || !amount) {
+      return res.status(400).json({ message: "Datos incompletos" });
+    }
+
+    // Crear empadronamiento
+    const empadronamientoRef = await db.collection("empadronamientos").add({
+      year,
+      amount,
+      status: "activo",
+      createdAt: new Date(),
+    });
+
+    const jugadoresSnap = await db.collection("jugadores").get();
+
+    const batch = db.batch();
+
+    for (const doc of jugadoresSnap.docs) {
+      const jugador = doc.data();
+      const jugadorRef = db.collection("jugadores").doc(doc.id);
+
+      if (jugador.becado) {
+        // Becado → habilitado directo
+        batch.update(jugadorRef, {
+          habilitadoAsambal: true,
+        });
+      } else {
+        // No becado → crear ticket
+        const ticketRef = empadronamientoRef
+          .collection("tickets")
+          .doc();
+
+        batch.set(ticketRef, {
+          jugadorId: doc.id,
+          nombre: jugador.nombre,
+          email: jugador.email,
+          amount,
+          status: "pendiente",
+          becado: false,
+          createdAt: new Date(),
+        });
+
+        batch.update(jugadorRef, {
+          habilitadoAsambal: false,
+        });
+      }
+    }
+
+    await batch.commit();
+
+    res.status(201).json({
+      message: "Empadronamiento creado correctamente",
+      empadronamientoId: empadronamientoRef.id,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error al crear empadronamiento" });
+  }
+};
+
 module.exports = { 
   getPendingUsers, 
   validateUser, 
@@ -429,4 +493,5 @@ module.exports = {
   grantScholarship, 
   revokeScholarship,
   getAllCoachesAsambal,
-  getCoachDetailAsambal };
+  getCoachDetailAsambal,
+  createEmpadronamiento};
