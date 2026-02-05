@@ -612,8 +612,88 @@ const getPlayersByClub = async (req, res) => {
   }
 };
 
+const getTicketsMembresias = async (req, res) => {
+  try {
+    const activeClub = req.user.clubs?.[0];
+
+    if (!activeClub?.clubId) {
+      return res.status(400).json({
+        message: "El usuario no tiene club activo",
+      });
+    }
+
+    const clubId = activeClub.clubId;
+    console.log("🏟️ Club ID:", clubId);
+
+    const ticketsSnap = await db
+      .collection("ticketsMembresias")
+      .where("clubId", "==", clubId)
+      .get();
+
+    const tickets = ticketsSnap.docs.map(doc => ({
+      ticketId: doc.id,
+      ...doc.data(),
+    }));
+
+    return res.status(200).json(tickets);
+  } catch (error) {
+    console.error("❌ Error getTicketsMembresias:", error);
+    return res.status(500).json({
+      message: "Error al obtener tickets de membresias",
+    });
+  }
+};
+
+const payTicketMembresia = async (req, res) => {
+  try {
+    const clubId = req.user.clubs?.[0]?.clubId;
+    const { ticketMembresiaId } = req.params;
+
+    if (!clubId) {
+      return res.status(403).json({ message: "Club no válido" });
+    }
+
+    const ticketRef = db.collection("ticketsMembresias").doc(ticketMembresiaId);
+    const ticketDoc = await ticketRef.get();
+
+    if (!ticketDoc.exists) {
+      return res.status(404).json({ message: "Ticket no encontrado" });
+    }
+
+    const ticket = ticketDoc.data();
+
+    if (ticket.clubId !== clubId) {
+      return res.status(403).json({ message: "No autorizado" });
+    }
+
+    if (ticket.status === "pagado") {
+      return res.status(400).json({ message: "Ticket ya pagado" });
+    }
+
+    // 1️⃣ Pagamos el ticket
+    await ticketRef.update({
+      status: "pagado",
+      updatedAt: new Date(),
+    });
+
+    // 2️⃣ Habilitamos el club en Asambal
+    await db.collection("clubes").doc(clubId).update({
+      habilitadoAsambal: true,
+      updatedAt: new Date(),
+    });
+
+    res.status(200).json({
+      message: "Ticket pagado y club habilitado en Asambal",
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error al pagar ticket" });
+  }
+};
 
 
 
 
-module.exports = { createClubWithAdmin, createOrTransferPlayer, getClubs, toggleClubStatus, getClubById, updateClub, completeClubProfile, getMyClubProfile, updateMyClub, validateRoleInClub, getPendingCoach, getPlayersByClub };
+
+
+module.exports = { createClubWithAdmin, createOrTransferPlayer, getClubs, toggleClubStatus, getClubById, updateClub, completeClubProfile, getMyClubProfile, updateMyClub, validateRoleInClub, getPendingCoach, getPlayersByClub, getTicketsMembresias, payTicketMembresia };

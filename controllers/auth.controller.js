@@ -116,6 +116,8 @@ const refreshToken = async (req, res) => {
 
     if (userData.status !== "ACTIVO") return res.status(403).json({ message: "Usuario no activo" });
 
+    const clubs = userData.clubs || [];
+
     const rolesRaw = userData.roles || [];
     const roles = Array.isArray(rolesRaw)
       ? rolesRaw
@@ -126,7 +128,7 @@ const refreshToken = async (req, res) => {
       id: userDoc.id,
       email: userData.email,
       roles,
-      clubId,
+      clubs,
     });
 
     res.json({ token: newAccessToken });
