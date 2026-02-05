@@ -708,7 +708,6 @@ const getMyPendingTransfers = async (req, res) => {
   }
 };
 
-
 // JUGADOR ACEPTA PASE
 const respondTransferRequest = async (req, res) => {
   console.log("ENTRÓ A RESPOND TRANSFER", req.params.id);
@@ -843,12 +842,11 @@ const getPlayerTickets = async (req, res) => {
   }
 };
 
-
-
 // JUGADOR ACEPTA TICKETS
 const payTicket = async (req, res) => {
   try {
-    const userId = req.userId;
+    const userId = req.user.id;
+    console.log("userId:", userId);
     const { ticketId } = req.params;
 
     const ticketRef = db.collection("tickets").doc(ticketId);
