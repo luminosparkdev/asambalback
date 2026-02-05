@@ -799,6 +799,86 @@ console.log("ROLES:", req.user.roles, typeof req.user.roles);
   }
 };
 
+//JUGADOR SOLICITA TICKETS
+const getPlayerTickets = async (req, res) => {
+  try {
+    console.log("🎟️ Buscando tickets para user:", req.user.id);
+
+    // 1️⃣ Obtener jugador desde el userId del token
+    const jugadoresSnap = await db
+      .collection("jugadores")
+      .where("userId", "==", req.user.id)
+      .limit(1)
+      .get();
+
+    if (jugadoresSnap.empty) {
+      return res.status(404).json({
+        message: "Jugador no encontrado para este usuario",
+      });
+    }
+
+    const jugadorId = jugadoresSnap.docs[0].id;
+    console.log("👤 Jugador ID:", jugadorId);
+
+    // 2️⃣ Buscar tickets del jugador
+    const ticketsSnap = await db
+      .collection("tickets")
+      .where("jugadorId", "==", jugadorId)
+      .get();
+
+    const tickets = ticketsSnap.docs.map((doc) => ({
+      ticketId: doc.id,
+      ...doc.data(),
+    }));
+
+    console.log("🧾 Tickets encontrados:", tickets.length);
+
+    // 3️⃣ Responder
+    return res.status(200).json(tickets);
+  } catch (error) {
+    console.error("❌ Error getPlayerTickets:", error);
+    return res.status(500).json({
+      message: "Error al obtener tickets del jugador",
+    });
+  }
+};
+
+
+
+// JUGADOR ACEPTA TICKETS
+const payTicket = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { ticketId } = req.params;
+
+    const ticketRef = db.collection("tickets").doc(ticketId);
+    const ticketDoc = await ticketRef.get();
+
+    if (!ticketDoc.exists) {
+      return res.status(404).json({ message: "Ticket no encontrado" });
+    }
+
+    const ticket = ticketDoc.data();
+
+    if (ticket.jugadorId !== userId) {
+      return res.status(403).json({ message: "No autorizado" });
+    }
+
+    if (ticket.status === "pagado") {
+      return res.status(400).json({ message: "Ticket ya pagado" });
+    }
+
+    await ticketRef.update({
+      status: "pagado",
+      updatedAt: new Date(),
+    });
+
+    res.status(200).json({ message: "Ticket pagado" });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error al pagar ticket" });
+  }
+};
 
 module.exports = {
   createPlayer,
@@ -816,4 +896,6 @@ module.exports = {
   respondTransferRequestAdmin,
   getMyPendingTransfers,
   respondTransferRequest,
+  getPlayerTickets,
+  payTicket,
 };

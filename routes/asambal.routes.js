@@ -110,7 +110,7 @@ router.post(
 // EMPADRONAMIENTOS
 
 router.post(
-  "/empadronamientos",
+  "/empadronamiento",
   authMiddleware,
   requireRole("admin_asambal"),
   createEmpadronamiento

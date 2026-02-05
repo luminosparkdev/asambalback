@@ -448,12 +448,13 @@ const createEmpadronamiento = async (req, res) => {
           habilitadoAsambal: true,
         });
       } else {
-        // No becado → crear ticket
-        const ticketRef = empadronamientoRef
-          .collection("tickets")
-          .doc();
+        // No becado → crear ticket en RAÍZ
+        const ticketRef = db.collection("tickets").doc(); // <-- raíz
 
         batch.set(ticketRef, {
+          ticketId: ticketRef.id,           // id del ticket
+          empadronamientoId: empadronamientoRef.id, // referencia al empadronamiento
+          year,
           jugadorId: doc.id,
           nombre: jugador.nombre,
           email: jugador.email,
@@ -461,6 +462,7 @@ const createEmpadronamiento = async (req, res) => {
           status: "pendiente",
           becado: false,
           createdAt: new Date(),
+          updatedAt: new Date(),
         });
 
         batch.update(jugadorRef, {
@@ -480,6 +482,7 @@ const createEmpadronamiento = async (req, res) => {
     res.status(500).json({ message: "Error al crear empadronamiento" });
   }
 };
+
 
 module.exports = { 
   getPendingUsers, 

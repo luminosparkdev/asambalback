@@ -21,6 +21,8 @@ const {
   respondTransferRequestAdmin,
   getMyPendingTransfers,
   respondTransferRequest,
+  getPlayerTickets,
+  payTicket,
 } = require("../controllers/players.controller");
 
 // ==========================
@@ -74,7 +76,19 @@ router.patch(
   respondTransferRequest
 );
 
+router.get(
+  "/tickets",
+  authMiddleware,
+  requireRole("jugador"),
+  getPlayerTickets
+);
 
+router.post(
+  "/tickets/:ticketId/pay",
+  authMiddleware,
+  requireRole("jugador"),
+  payTicket
+);
 
 // ==========================
 // RUTAS ESPECIALES
