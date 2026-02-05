@@ -483,6 +483,71 @@ const createEmpadronamiento = async (req, res) => {
   }
 };
 
+const createMembresia = async (req, res) => {
+  try {
+    const { year, amount } = req.body;
+
+    if (!year || !amount) {
+      return res.status(400).json({ message: "Datos incompletos" });
+    }
+
+    // Crear membresia
+    const membresiaRef = await db.collection("membresias").add({
+      year,
+      amount,
+      status: "activo",
+      createdAt: new Date(),
+    });
+
+    const clubesSnap = await db.collection("clubes").get();
+
+    const batch = db.batch();
+
+    for (const doc of clubesSnap.docs) {
+      const club = doc.data();
+      const clubRef = db.collection("clubes").doc(doc.id);
+
+      if (club.becado) {
+        // Becado → habilitado directo
+        batch.update(clubRef, {
+          habilitadoAsambal: true,
+        });
+      } else {
+        // No becado → crear ticket en RAÍZ
+        const ticketMembresiaRef = db.collection("ticketsMembresias").doc(); // <-- raíz
+
+        batch.set(ticketMembresiaRef, {
+          ticketId: ticketMembresiaRef.id,           // id del ticket
+          membresiaId: membresiaRef.id, // referencia a la membresia
+          year,
+          clubId: doc.id,
+          nombre: club.nombre,
+          email: club.email,
+          amount,
+          status: "pendiente",
+          becado: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        batch.update(clubRef, {
+          habilitadoAsambal: false,
+        });
+      }
+    }
+
+    await batch.commit();
+
+    res.status(201).json({
+      message: "Membresia creada correctamente",
+      membresiaId: membresiaRef.id,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error al crear membresia" });
+  }
+};
+
 
 module.exports = { 
   getPendingUsers, 
@@ -497,4 +562,5 @@ module.exports = {
   revokeScholarship,
   getAllCoachesAsambal,
   getCoachDetailAsambal,
-  createEmpadronamiento};
+  createEmpadronamiento,
+  createMembresia};

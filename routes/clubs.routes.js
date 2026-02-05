@@ -15,7 +15,9 @@ const {
   getMyClubProfile,
   updateMyClub,
   getPlayersByClub,
-  createOrTransferPlayer
+  createOrTransferPlayer,
+  getTicketsMembresias,
+  payTicketMembresia
 } = require("../controllers/clubs.controller");
 const { sendRequestJoinToCoach } = require("../controllers/coaches.controller");
 
@@ -93,6 +95,17 @@ router.post("/:clubId/complete-profile",
 // Perfil propio
 router.get("/me", authMiddleware, requireRole("admin_club"), getMyClubProfile);
 router.put("/me", authMiddleware, requireRole("admin_club"), updateMyClub);
+
+//MEMBRESIAS
+// Obtener tickets de membresias del club
+router.get("/membresias", authMiddleware, requireRole("admin_club"), getTicketsMembresias);
+
+router.post(
+  "/membresias/:ticketMembresiaId/pay",
+  authMiddleware,
+  requireRole("admin_club"),
+  payTicketMembresia
+);
 
 // -------------------- SOLICITUDES PENDIENTES --------------------
 

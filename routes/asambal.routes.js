@@ -15,7 +15,8 @@ const {
   revokeScholarship,
   getAllCoachesAsambal,
   getCoachDetailAsambal,
-  createEmpadronamiento
+  createEmpadronamiento,
+  createMembresia
 } = require("../controllers/asambal.controller");
 const { createClubWithAdmin } = require("../controllers/clubs.controller");
 const {getMyTransferRequests} = require("../controllers/players.controller");
@@ -116,6 +117,14 @@ router.post(
   createEmpadronamiento
 );
 
+//MEMBRESIAS
+
+router.post(
+  "/membresia",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  createMembresia
+);
 //PROFESORES
 
 router.get(
