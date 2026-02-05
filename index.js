@@ -8,6 +8,7 @@ const usersRoutes = require("./routes/users.routes");
 const clubsRoutes = require("./routes/clubs.routes");
 const coachesRoutes = require("./routes/coaches.routes");
 const asambalRoutes = require("./routes/asambal.routes");
+const heroclubsRoutes = require("./routes/heroclubs.routes");
 const jugadoresRoutes = require("./routes/players.routes");
 const categoriesRoutes = require("./routes/categories.routes");
 
@@ -28,6 +29,7 @@ app.use("/api/users", usersRoutes);
 app.use("/api/clubs", clubsRoutes);
 app.use("/api/coaches", coachesRoutes);
 app.use("/api/asambal", asambalRoutes);
+app.use("/api/heroclubs", heroclubsRoutes);
 app.use("/api/players", jugadoresRoutes);
 app.use("/api/categories", categoriesRoutes);
 
