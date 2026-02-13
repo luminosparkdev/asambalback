@@ -20,6 +20,8 @@ const {
   getMyCoachProfile,
   updateMyCoachProfile,
   validatePlayersInClub,
+  pagarSeguro,
+  getSeguros,
 } = require("../controllers/coaches.controller.js");
 
 // =======================
@@ -88,6 +90,20 @@ router.patch(
   respondCoachRequest
 );
 
+router.get(
+  "/seguros",
+  authMiddleware,
+  requireRole("profesor"),
+  getSeguros
+);
+
+router.patch(
+  "/:seguroId/pagar",
+  authMiddleware,
+  requireRole("profesor"),
+  pagarSeguro
+);
+
 // =======================
 // LISTAR / DETALLE
 // =======================
@@ -135,5 +151,6 @@ router.patch(
   requireRole("profesor"),
   validatePlayersInClub
 );
+
 
 module.exports = router;

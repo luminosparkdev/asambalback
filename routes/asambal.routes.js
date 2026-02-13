@@ -16,7 +16,11 @@ const {
   getAllCoachesAsambal,
   getCoachDetailAsambal,
   createEmpadronamiento,
-  createMembresia
+  createMembresia,
+  getSeguroYears,
+  getSegurosByYear,
+  createSeguro,
+  getAllTicketsEmpadronamiento
 } = require("../controllers/asambal.controller");
 const { createClubWithAdmin } = require("../controllers/clubs.controller");
 const {getMyTransferRequests} = require("../controllers/players.controller");
@@ -117,6 +121,13 @@ router.post(
   createEmpadronamiento
 );
 
+router.get(
+  "/empadronamiento/tickets",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getAllTicketsEmpadronamiento
+);
+
 //MEMBRESIAS
 
 router.post(
@@ -125,6 +136,33 @@ router.post(
   requireRole("admin_asambal"),
   createMembresia
 );
+
+//SEGUROS
+
+// Obtener años disponibles con seguros emitidos
+router.get(
+  "/seguros/years",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getSeguroYears
+);
+
+// Obtener seguros por año
+router.get(
+  "/seguros",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getSegurosByYear
+);
+
+// Agregar nuevo seguro
+router.post(
+  "/seguros",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  createSeguro
+);
+
 //PROFESORES
 
 router.get(

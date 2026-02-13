@@ -866,6 +866,95 @@ const validatePlayersInClub = async (req, res) => {
   }
 };
 
+const getSeguros = async (req, res) => {
+  try {
+    const profesorId = req.user.uid; // viene del authMiddleware
+    const year = req.query.year ? Number(req.query.year) : null;
+
+    if (!profesorId) {
+      return res.status(400).json({
+        message: "Profesor ID no encontrado en la autenticación",
+      });
+    }
+
+    let query = db
+      .collection("seguroProfesores")
+      .where("profesorId", "==", profesorId);
+
+    if (year) {
+      query = query.where("year", "==", year);
+    }
+
+    const segurosSnap = await query.orderBy("year", "desc").get();
+
+    if (segurosSnap.empty) {
+      return res.json([]);
+    }
+
+    const result = segurosSnap.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        year: data.year,
+        amount: data.amount,
+        status: data.status,
+        paidAt: data.paidAt || null,
+      };
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error en getSeguros:", error);
+    res.status(500).json({
+      message: "Error obteniendo los seguros",
+      error: error.message,
+    });
+  }
+};
+
+
+
+
+
+
+
+
+const pagarSeguro = async (req, res) => {
+  try {
+    const { seguroId } = req.params;
+    const profesorId = req.user.uid;
+
+    const ref = db
+      .collection("seguros")
+      .doc(seguroId)
+      .collection("profesores")
+      .doc(profesorId);
+
+    const snap = await ref.get();
+
+    if (!snap.exists) {
+      return res.status(404).json({ message: "Ticket no encontrado" });
+    }
+
+    if (snap.data().status === "activo") {
+      return res.json({ message: "El seguro ya está activo" });
+    }
+
+    await ref.update({
+      status: "activo",
+      paidAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    res.json({ message: "Seguro activado correctamente" });
+  } catch (error) {
+    console.error("pagarSeguro:", error);
+    res.status(500).json({ message: "Error procesando pago" });
+  }
+};
+
+
+
 module.exports = {
   createProfesor,
   getMyClubs,
@@ -883,4 +972,6 @@ module.exports = {
   getMyCoachProfile,
   updateMyCoachProfile,
   validatePlayersInClub,
+  getSeguros,
+  pagarSeguro,
 };

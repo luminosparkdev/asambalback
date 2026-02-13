@@ -426,48 +426,54 @@ const createEmpadronamiento = async (req, res) => {
       return res.status(400).json({ message: "Datos incompletos" });
     }
 
-    // Crear empadronamiento
-    const empadronamientoRef = await db.collection("empadronamientos").add({
-      year,
+    // 1️⃣ Chequear si ya existe empadronamiento para este año
+    const existSnap = await db
+      .collection("empadronamientos")
+      .where("year", "==", Number(year))
+      .get();
+
+    if (!existSnap.empty) {
+      return res.status(400).json({
+        message: `Ya existe un empadronamiento para el año ${year}`,
+      });
+    }
+
+    // 2️⃣ Crear empadronamiento en la colección de seguimiento
+    const empRef = await db.collection("empadronamientos").add({
+      year: Number(year),
       amount,
       status: "activo",
       createdAt: new Date(),
     });
 
+    // 3️⃣ Crear tickets para cada jugador (solo si no existía empadronamiento)
     const jugadoresSnap = await db.collection("jugadores").get();
-
     const batch = db.batch();
 
     for (const doc of jugadoresSnap.docs) {
       const jugador = doc.data();
       const jugadorRef = db.collection("jugadores").doc(doc.id);
 
-      if (jugador.becado) {
-        // Becado → habilitado directo
-        batch.update(jugadorRef, {
-          habilitadoAsambal: true,
-        });
-      } else {
-        // No becado → crear ticket en RAÍZ
-        const ticketRef = db.collection("tickets").doc(); // <-- raíz
-
+      if (!jugador.becado && jugador.clubId) {
+        const ticketRef = db.collection("ticketsEmpadronamiento").doc();
         batch.set(ticketRef, {
-          ticketId: ticketRef.id,           // id del ticket
-          empadronamientoId: empadronamientoRef.id, // referencia al empadronamiento
-          year,
-          jugadorId: doc.id,
-          nombre: jugador.nombre,
-          email: jugador.email,
-          amount,
-          status: "pendiente",
-          becado: false,
-          createdAt: new Date(),
-          updatedAt: new Date(),
+  ticketId: ticketRef.id,
+  empadronamientoId: empRef.id,
+  year: Number(year),
+  jugadorId: doc.id,
+  clubId: jugador.clubId, // siempre tiene clubId
+  nombre: jugador.nombre, // AGREGAR nombre
+  apellido: jugador.apellido, // AGREGAR apellido
+  amount,
+  status: "pendiente",
+  becado: false,
+  createdAt: new Date(),
+  updatedAt: new Date(),
         });
 
-        batch.update(jugadorRef, {
-          habilitadoAsambal: false,
-        });
+        batch.update(jugadorRef, { habilitadoAsambal: false });
+      } else {
+        batch.update(jugadorRef, { habilitadoAsambal: true });
       }
     }
 
@@ -475,7 +481,7 @@ const createEmpadronamiento = async (req, res) => {
 
     res.status(201).json({
       message: "Empadronamiento creado correctamente",
-      empadronamientoId: empadronamientoRef.id,
+      empadronamientoId: empRef.id,
     });
   } catch (error) {
     console.error(error);
@@ -483,6 +489,8 @@ const createEmpadronamiento = async (req, res) => {
   }
 };
 
+
+//FUNCION PARA CREAR MEMBRESIA ASAMBAL
 const createMembresia = async (req, res) => {
   try {
     const { year, amount } = req.body;
@@ -548,6 +556,158 @@ const createMembresia = async (req, res) => {
   }
 };
 
+const getAllTicketsEmpadronamiento = async (req, res) => {
+  try {
+    const snap = await db
+      .collection("ticketsEmpadronamiento")
+      .orderBy("createdAt", "desc")
+      .get();
+
+    const tickets = snap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+    }));
+
+    res.json(tickets);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error al obtener tickets" });
+  }
+};
+
+//FUNCION PARA OBTENER AÑOS DE SEGUROS
+const getSeguroYears = async (req, res) => {
+  try {
+    const snapshot = await db.collection("seguros").get();
+
+    const years = [
+      ...new Set(snapshot.docs.map((doc) => doc.data().year)),
+    ].sort((a, b) => a - b);
+
+    res.status(200).json(years);
+  } catch (error) {
+    console.error("getSeguroYears:", error);
+    res.status(500).json({ message: "Error obteniendo años de seguros" });
+  }
+};
+
+//FUNCION PARA OBTENER SEGUROS POR AÑO
+const getSegurosByYear = async (req, res) => {
+  try {
+    const year = Number(req.query.year);
+
+    if (!year) {
+      return res.status(400).json({ message: "Año requerido" });
+    }
+
+    const segurosSnap = await db
+      .collection("seguroProfesores")
+      .where("year", "==", year)
+      .get();
+
+    if (segurosSnap.empty) {
+      return res.json([]);
+    }
+
+    const result = segurosSnap.docs.map((doc) => {
+      const data = doc.data();
+
+      return {
+        id: doc.id,
+        year: data.year,
+        profesorId: data.profesorId,
+        nombre: data.nombre,
+        apellido: data.apellido,
+        amount: data.amount,
+        status: data.status,
+        paidAt: data.paidAt,
+      };
+    });
+
+    res.json(result);
+
+  } catch (error) {
+    console.error("getSegurosByYear:", error);
+    res.status(500).json({ message: "Error interno del servidor" });
+  }
+};
+
+
+//FUNCION PARA CREAR SEGURO ANUAL
+const createSeguro = async (req, res) => {
+  const { year, amount } = req.body;
+
+  try {
+    const yearNumber = Number(year);
+    const amountNumber = Number(amount);
+
+    const seguroRef = db.collection("seguros").doc(String(yearNumber));
+
+    const existing = await seguroRef.get();
+    if (existing.exists) {
+      return res.status(400).json({
+        message: "El seguro para este año ya existe",
+      });
+    }
+
+    // Crear documento del año
+    await seguroRef.set({
+      year: yearNumber,
+      baseAmount: amountNumber,
+      createdAt: new Date(),
+    });
+
+    const profesoresSnap = await db.collection("profesores").get();
+
+    let batch = db.batch();
+    let operationCount = 0;
+
+    for (const doc of profesoresSnap.docs) {
+      const profesor = doc.data();
+
+      const seguroProfesorRef = db.collection("seguroProfesores").doc();
+
+      batch.set(seguroProfesorRef, {
+        year: yearNumber,
+        profesorId: doc.id,
+        nombre: profesor.nombre || "",
+        apellido: profesor.apellido || "",
+        amount: amountNumber,
+        status: "inactivo",
+        paidAt: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      operationCount++;
+
+      if (operationCount === 500) {
+        await batch.commit();
+        batch = db.batch();
+        operationCount = 0;
+      }
+    }
+
+    if (operationCount > 0) {
+      await batch.commit();
+    }
+
+    res.status(201).json({
+      message: "Seguro anual creado correctamente",
+      year: yearNumber,
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error creando seguro anual",
+    });
+  }
+};
+
+
+
+
 
 module.exports = { 
   getPendingUsers, 
@@ -563,4 +723,8 @@ module.exports = {
   getAllCoachesAsambal,
   getCoachDetailAsambal,
   createEmpadronamiento,
-  createMembresia};
+  createMembresia,
+  getSeguroYears,
+  getSegurosByYear,
+  createSeguro,
+  getAllTicketsEmpadronamiento};
