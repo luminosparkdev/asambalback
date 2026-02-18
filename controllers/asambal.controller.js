@@ -2,6 +2,72 @@ const { db } = require("../config/firebase");
 const { createAuthUserIfNotExists } = require("../utils/firebaseAuth");
 const admin = require("firebase-admin");
 
+const seedLosToldos = async (req, res) => {
+  try {
+    // 1️⃣ Verificar si ya existe
+    const existSnap = await db
+      .collection("clubes")
+      .where("nombre", "==", "Los Toldos")
+      .get();
+
+    if (!existSnap.empty) {
+      return res.status(400).json({
+        message: "El club Los Toldos ya existe",
+      });
+    }
+
+    // 2️⃣ Crear club SIN admin ni token
+    const clubRef = db.collection("clubes").doc();
+
+    await clubRef.set({
+      nombre: "Los Toldos",
+      ciudad: "Buenos Aires",
+      status: "ACTIVO",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // 3️⃣ Crear jugadores random
+    const nombres = ["Juan", "Pedro", "Lucas", "Mateo", "Tomás", "Franco"];
+    const apellidos = ["Gomez", "Perez", "Lopez", "Fernandez", "Martinez"];
+
+    const batch = db.batch();
+
+    for (let i = 0; i < 25; i++) {
+      const jugadorRef = db.collection("jugadores").doc();
+
+      const nombreRandom =
+        nombres[Math.floor(Math.random() * nombres.length)];
+      const apellidoRandom =
+        apellidos[Math.floor(Math.random() * apellidos.length)];
+
+      batch.set(jugadorRef, {
+        nombre: nombreRandom,
+        apellido: apellidoRandom,
+        clubId: clubRef.id,
+        clubNombre: "Los Toldos",
+        becado: false,
+        habilitadoAsambal: true,
+        createdAt: new Date(),
+      });
+    }
+
+    await batch.commit();
+
+    res.status(201).json({
+      message: "Club Los Toldos y 25 jugadores creados correctamente",
+      clubId: clubRef.id,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error al generar seed",
+    });
+  }
+};
+
+
+//FUNCION PARA SERIALIZAR CAMPOS DE FECHA
 const serializeTimestamps = (data) => {
   const result = {};
   for (const key in data) {
@@ -14,6 +80,7 @@ const serializeTimestamps = (data) => {
   return result;
 };
 
+//FUNCION PARA CALCULAR VENCIMIENTO DE BECA (28/02 del año siguiente)
 const calcularVencimiento = () => {
   const now = new Date();
   const year = now.getMonth() >= 1 ? now.getFullYear() + 1 : now.getFullYear();
@@ -417,79 +484,6 @@ const getCoachDetailAsambal = async (req, res) => {
   }
 };
 
-//FUNCION PARA CREAR EMPADRONAMIENTO ASAMBAL
-const createEmpadronamiento = async (req, res) => {
-  try {
-    const { year, amount } = req.body;
-
-    if (!year || !amount) {
-      return res.status(400).json({ message: "Datos incompletos" });
-    }
-
-    // 1️⃣ Chequear si ya existe empadronamiento para este año
-    const existSnap = await db
-      .collection("empadronamientos")
-      .where("year", "==", Number(year))
-      .get();
-
-    if (!existSnap.empty) {
-      return res.status(400).json({
-        message: `Ya existe un empadronamiento para el año ${year}`,
-      });
-    }
-
-    // 2️⃣ Crear empadronamiento en la colección de seguimiento
-    const empRef = await db.collection("empadronamientos").add({
-      year: Number(year),
-      amount,
-      status: "activo",
-      createdAt: new Date(),
-    });
-
-    // 3️⃣ Crear tickets para cada jugador (solo si no existía empadronamiento)
-    const jugadoresSnap = await db.collection("jugadores").get();
-    const batch = db.batch();
-
-    for (const doc of jugadoresSnap.docs) {
-      const jugador = doc.data();
-      const jugadorRef = db.collection("jugadores").doc(doc.id);
-
-      if (!jugador.becado && jugador.clubId) {
-        const ticketRef = db.collection("ticketsEmpadronamiento").doc();
-        batch.set(ticketRef, {
-  ticketId: ticketRef.id,
-  empadronamientoId: empRef.id,
-  year: Number(year),
-  jugadorId: doc.id,
-  clubId: jugador.clubId, // siempre tiene clubId
-  nombre: jugador.nombre, // AGREGAR nombre
-  apellido: jugador.apellido, // AGREGAR apellido
-  amount,
-  status: "pendiente",
-  becado: false,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-        });
-
-        batch.update(jugadorRef, { habilitadoAsambal: false });
-      } else {
-        batch.update(jugadorRef, { habilitadoAsambal: true });
-      }
-    }
-
-    await batch.commit();
-
-    res.status(201).json({
-      message: "Empadronamiento creado correctamente",
-      empadronamientoId: empRef.id,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error al crear empadronamiento" });
-  }
-};
-
-
 //FUNCION PARA CREAR MEMBRESIA ASAMBAL
 const createMembresia = async (req, res) => {
   try {
@@ -556,24 +550,312 @@ const createMembresia = async (req, res) => {
   }
 };
 
-const getAllTicketsEmpadronamiento = async (req, res) => {
+//FUNCION PARA CREAR EMPADRONAMIENTO ASAMBAL
+const createEmpadronamiento = async (req, res) => {
   try {
-    const snap = await db
-      .collection("ticketsEmpadronamiento")
-      .orderBy("createdAt", "desc")
+    const { year, amount } = req.body;
+
+    if (!year || !amount) {
+      return res.status(400).json({ message: "Datos incompletos" });
+    }
+
+    // 1️⃣ Chequear si ya existe empadronamiento para este año
+    const existSnap = await db
+      .collection("empadronamientos")
+      .where("year", "==", Number(year))
+      .where("type", "==", "jugadores")
       .get();
 
-    const tickets = snap.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
+    if (!existSnap.empty) {
+      return res.status(400).json({
+        message: `Ya existe un empadronamiento para el año ${year}`,
+      });
+    }
 
-    res.json(tickets);
+    // 2️⃣ Crear empadronamiento en la colección de seguimiento
+    const empRef = await db.collection("empadronamientos").add({
+      year: Number(year),
+      amount,
+      type: "jugadores",
+      status: "activo",
+      createdAt: new Date(),
+    });
+
+    // 3️⃣ Crear tickets para cada jugador (solo si no existía empadronamiento)
+    const jugadoresSnap = await db.collection("jugadores").get();
+    const batch = db.batch();
+
+    for (const doc of jugadoresSnap.docs) {
+      const jugador = doc.data();
+      const jugadorRef = db.collection("jugadores").doc(doc.id);
+
+      if (jugador.clubNombre === "Los Toldos") {
+  continue; // saltar jugadores de Los Toldos
+}
+
+      if (!jugador.becado && jugador.clubId) {
+        const ticketRef = db.collection("ticketsEmpadronamiento").doc();
+        batch.set(ticketRef, {
+  ticketId: ticketRef.id,
+  empadronamientoId: empRef.id,
+  year: Number(year),
+  jugadorId: doc.id,
+  clubId: jugador.clubId, // siempre tiene clubId
+  nombre: jugador.nombre, // AGREGAR nombre
+  apellido: jugador.apellido, // AGREGAR apellido
+  amount,
+  status: "pendiente",
+  becado: false,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+        });
+
+        batch.update(jugadorRef, { habilitadoAsambal: false });
+      } else {
+        batch.update(jugadorRef, { habilitadoAsambal: true });
+      }
+    }
+
+    await batch.commit();
+
+    res.status(201).json({
+      message: "Empadronamiento creado correctamente",
+      empadronamientoId: empRef.id,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error al crear empadronamiento" });
+  }
+};
+
+//FUNCION PARA CREAR EMPADRONAMIENTO DE CLUB LOS TOLDOS
+const createEmpadronamientoClub = async (req, res) => {
+  try {
+    const { year, amount } = req.body;
+
+    if (!year || !amount) {
+      return res.status(400).json({ message: "Datos incompletos" });
+    }
+
+    // 1️⃣ Verificar si ya existe empadronamiento de CLUB para ese año
+    const existSnap = await db
+      .collection("empadronamientos")
+      .where("year", "==", Number(year))
+      .where("type", "==", "club")
+      .get();
+
+    if (!existSnap.empty) {
+      return res.status(400).json({
+        message: `Ya existe un empadronamiento de club para el año ${year}`,
+      });
+    }
+
+    // 2️⃣ Buscar club "Los Toldos"
+    const clubSnap = await db
+      .collection("clubes")
+      .where("nombre", "==", "Los Toldos")
+      .get();
+
+    if (clubSnap.empty) {
+      return res.status(404).json({
+        message: "No se encontró el club Los Toldos",
+      });
+    }
+
+    const clubDoc = clubSnap.docs[0];
+    const clubId = clubDoc.id;
+
+    // 3️⃣ Buscar jugadores de ese club
+    const jugadoresSnap = await db
+      .collection("jugadores")
+      .where("clubId", "==", clubId)
+      .get();
+
+    const cantidadJugadores = jugadoresSnap.size;
+
+    if (cantidadJugadores === 0) {
+      return res.status(400).json({
+        message: "No hay jugadores en este club",
+      });
+    }
+
+    const total = cantidadJugadores * amount;
+
+    // 4️⃣ Crear empadronamiento tipo CLUB
+    const empRef = await db.collection("empadronamientos").add({
+      year: Number(year),
+      amount,
+      type: "club",
+      clubId,
+      totalJugadores: cantidadJugadores,
+      totalAmount: total,
+      status: "activo",
+      createdAt: new Date(),
+    });
+
+    // 5️⃣ Crear ticket único en ticketsEmpadronamientoClub
+    const ticketRef = db.collection("ticketsEmpadronamientoClub").doc();
+
+    const batch = db.batch();
+
+    batch.set(ticketRef, {
+      ticketId: ticketRef.id,
+      empadronamientoId: empRef.id,
+      year: Number(year),
+      clubId,
+      clubNombre: clubDoc.data().nombre,
+      totalJugadores: cantidadJugadores,
+      amountIndividual: amount,
+      totalAmount: total,
+      status: "pendiente",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    // 6️⃣ Deshabilitar todos los jugadores hasta que el club pague
+    jugadoresSnap.docs.forEach((doc) => {
+      const jugadorRef = db.collection("jugadores").doc(doc.id);
+
+      batch.update(jugadorRef, {
+        habilitadoAsambal: false,
+      });
+    });
+
+    await batch.commit();
+
+    res.status(201).json({
+      message: "Empadronamiento de club creado correctamente",
+      empadronamientoId: empRef.id,
+      ticketId: ticketRef.id,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: "Error al crear empadronamiento de club",
+    });
+  }
+};
+
+// FUNCION PARA OBTENER TODOS LOS TICKETS DE EMPADRONAMIENTO
+const getAllTicketsEmpadronamiento = async (req, res) => {
+  try {
+    const [jugadoresSnap, clubSnap] = await Promise.all([
+      db.collection("ticketsEmpadronamiento")
+        .orderBy("createdAt", "desc")
+        .get(),
+
+      db.collection("ticketsEmpadronamientoClub")
+        .orderBy("createdAt", "desc")
+        .get()
+    ]);
+
+    // 👇 ACA VA LO QUE ME MOSTRASTE
+    const ticketsJugadores = jugadoresSnap.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        tipo: "jugador",
+        ...data,
+        amount: data.amount, // ya lo trae pero lo dejamos explícito
+      };
+    });
+
+    const ticketsClub = clubSnap.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        tipo: "club",
+        ...data,
+        amount: data.totalAmount, // 👈 normalizamos
+      };
+    });
+
+    const todos = [...ticketsJugadores, ...ticketsClub]
+      .sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
+
+    res.json(todos);
+
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Error al obtener tickets" });
   }
 };
+
+//FUNCION PARA PAGAR EMPADRONAMIENTO MASIVO
+// FUNCION PARA PAGAR EMPADRONAMIENTO MASIVO
+const pagarEmpadronamientoMasivo = async (req, res) => {
+  try {
+    const { ticketIds } = req.body;
+
+    if (!ticketIds || ticketIds.length === 0) {
+      return res.status(400).json({ message: "No hay tickets seleccionados" });
+    }
+
+    const batch = db.batch();
+
+    for (const ticketId of ticketIds) {
+
+      // 🔎 1️⃣ Buscar en tickets individuales
+      const ticketJugadorRef = db.collection("ticketsEmpadronamiento").doc(ticketId);
+      const ticketJugadorSnap = await ticketJugadorRef.get();
+
+      if (ticketJugadorSnap.exists) {
+        const ticket = ticketJugadorSnap.data();
+
+        // actualizar ticket
+        batch.update(ticketJugadorRef, {
+          status: "pagado",
+          updatedAt: new Date(),
+        });
+
+        // habilitar jugador
+        const jugadorRef = db.collection("jugadores").doc(ticket.jugadorId);
+        batch.update(jugadorRef, {
+          habilitadoAsambal: true,
+        });
+
+        continue; // pasa al siguiente ticket
+      }
+
+      // 🔎 2️⃣ Buscar en tickets de club
+      const ticketClubRef = db.collection("ticketsEmpadronamientoClub").doc(ticketId);
+      const ticketClubSnap = await ticketClubRef.get();
+
+      if (ticketClubSnap.exists) {
+        const ticketClub = ticketClubSnap.data();
+
+        // actualizar ticket club
+        batch.update(ticketClubRef, {
+          status: "pagado",
+          updatedAt: new Date(),
+        });
+
+        // habilitar TODOS los jugadores del club
+        const jugadoresSnap = await db
+          .collection("jugadores")
+          .where("clubId", "==", ticketClub.clubId)
+          .get();
+
+        jugadoresSnap.docs.forEach((doc) => {
+          const jugadorRef = db.collection("jugadores").doc(doc.id);
+
+          batch.update(jugadorRef, {
+            habilitadoAsambal: true,
+          });
+        });
+      }
+    }
+
+    await batch.commit();
+
+    res.status(200).json({ message: "Tickets actualizados correctamente" });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error al actualizar tickets" });
+  }
+};
+
 
 //FUNCION PARA OBTENER AÑOS DE SEGUROS
 const getSeguroYears = async (req, res) => {
@@ -705,10 +987,6 @@ const createSeguro = async (req, res) => {
   }
 };
 
-
-
-
-
 module.exports = { 
   getPendingUsers, 
   validateUser, 
@@ -727,4 +1005,7 @@ module.exports = {
   getSeguroYears,
   getSegurosByYear,
   createSeguro,
-  getAllTicketsEmpadronamiento};
+  getAllTicketsEmpadronamiento,
+  pagarEmpadronamientoMasivo,
+  createEmpadronamientoClub,
+  seedLosToldos,};
