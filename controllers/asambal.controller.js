@@ -625,6 +625,38 @@ const getMembresiasResumen = async (req, res) => {
   }
 };
 
+//FUNCION PARA ENCONTRAR MEMBRESIA ACTIVA
+const getMembresiaActiva = async (req, res) => {
+  try {
+
+    const snap = await db
+      .collection("membresias")
+      .where("status", "==", "activo")
+      .limit(1)
+      .get();
+
+    if (snap.empty) {
+      return res.json(null);
+    }
+
+    const doc = snap.docs[0];
+
+    res.json({
+      id: doc.id,
+      ...doc.data()
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      message: "Error obteniendo membresía activa"
+    });
+
+  }
+};
+
 //FUNCION PARA CONSULTAR MEMBRESIA DE UN CLUB
 const getMembresiasClub = async (req, res) => {
   try {
@@ -1167,6 +1199,7 @@ module.exports = {
   createEmpadronamiento,
   createMembresia,
   getMembresiasResumen,
+  getMembresiaActiva,
   getMembresiasClub,
   acreditarCuota,
   rechazarCuota,

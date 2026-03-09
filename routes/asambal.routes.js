@@ -19,6 +19,7 @@ const {
   createEmpadronamiento,
   createMembresia,
   getMembresiasResumen,
+  getMembresiaActiva,
   getSeguroYears,
   getMembresiasClub,
   acreditarCuota,
@@ -179,6 +180,13 @@ router.get(
   authMiddleware,
   requireRole("admin_asambal"),
   getMembresiasResumen
+);
+
+router.get(
+  "/membresia/activo",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getMembresiaActiva
 );
 
 //OBTENER MEMBRESIAS POR CLUB

@@ -750,9 +750,59 @@ const payTicketMembresia = async (req, res) => {
   }
 };
 
+const notificarPagoMembresia = async (req, res) => {
+  try {
+
+    const { ticketId } = req.params;
+
+    const ref = db.collection("ticketsMembresias").doc(ticketId);
+
+    const doc = await ref.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({
+        message: "Ticket no encontrado"
+      });
+    }
+
+    await ref.update({
+      status: "pendiente",
+      notifiedAt: new Date()
+    });
+
+    res.json({
+      message: "Pago notificado correctamente"
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      message: "Error notificando pago"
+    });
+
+  }
+};
 
 
 
 
 
-module.exports = { createClubWithAdmin, createOrTransferPlayer, getClubs, toggleClubStatus, getClubById, updateClub, completeClubProfile, getMyClubProfile, updateMyClub, validateRoleInClub, getPendingCoach, getPlayersByClub, getTicketsMembresias, payTicketMembresia };
+
+module.exports = { 
+  createClubWithAdmin, 
+  createOrTransferPlayer, 
+  getClubs, toggleClubStatus, 
+  getClubById, 
+  updateClub, 
+  completeClubProfile, 
+  getMyClubProfile, 
+  updateMyClub, 
+  validateRoleInClub, 
+  getPendingCoach, 
+  getPlayersByClub, 
+  getTicketsMembresias, 
+  payTicketMembresia,
+  notificarPagoMembresia
+};

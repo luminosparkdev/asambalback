@@ -17,7 +17,8 @@ const {
   getPlayersByClub,
   createOrTransferPlayer,
   getTicketsMembresias,
-  payTicketMembresia
+  payTicketMembresia,
+  notificarPagoMembresia
 } = require("../controllers/clubs.controller");
 const { sendRequestJoinToCoach } = require("../controllers/coaches.controller");
 
@@ -105,6 +106,13 @@ router.post(
   authMiddleware,
   requireRole("admin_club"),
   payTicketMembresia
+);
+
+router.patch(
+  "/membresias/ticket/:ticketId/notificar",
+  authMiddleware,
+  requireRole("admin_club"),
+  notificarPagoMembresia
 );
 
 // -------------------- SOLICITUDES PENDIENTES --------------------
