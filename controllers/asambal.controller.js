@@ -487,22 +487,28 @@ const getCoachDetailAsambal = async (req, res) => {
 //FUNCION PARA CREAR MEMBRESIA ASAMBAL
 const createMembresia = async (req, res) => {
   try {
-    const { year, amount } = req.body;
+    const { year, cuotas } = req.body;
 
-    if (!year || !amount) {
+    if (!year || !cuotas || cuotas.length !== 3) {
       return res.status(400).json({ message: "Datos incompletos" });
     }
+
+    //Normalizas cuotas
+    const cuotasNormalizadas = cuotas.map((c, index) => ({
+      number: index + 1,
+      amount: Number(c.amount),
+      dueDate: c.dueDate,
+    }));
 
     // Crear membresia
     const membresiaRef = await db.collection("membresias").add({
       year,
-      amount,
+      cuotas: cuotasNormalizadas,
       status: "activo",
       createdAt: new Date(),
     });
 
     const clubesSnap = await db.collection("clubes").get();
-
     const batch = db.batch();
 
     for (const doc of clubesSnap.docs) {
@@ -516,21 +522,25 @@ const createMembresia = async (req, res) => {
         });
       } else {
         // No becado → crear ticket en RAÍZ
-        const ticketMembresiaRef = db.collection("ticketsMembresias").doc(); // <-- raíz
+        for (const cuota of cuotasNormalizadas) {
+          const ticketMembresiaRef = db.collection("ticketsMembresias").doc();
 
         batch.set(ticketMembresiaRef, {
-          ticketId: ticketMembresiaRef.id,           // id del ticket
-          membresiaId: membresiaRef.id, // referencia a la membresia
+          ticketId: ticketMembresiaRef.id,
+          membresiaId: membresiaRef.id,
           year,
           clubId: doc.id,
           nombre: club.nombre,
           email: club.email,
-          amount,
-          status: "pendiente",
+          cuotaNumber: cuota.number,
+          dueDate: cuota.dueDate,
+          amount: cuota.amount,
+          status: "adeudada",
           becado: false,
           createdAt: new Date(),
           updatedAt: new Date(),
         });
+      }
 
         batch.update(clubRef, {
           habilitadoAsambal: false,
@@ -549,6 +559,162 @@ const createMembresia = async (req, res) => {
     res.status(500).json({ message: "Error al crear membresia" });
   }
 };
+
+//FUNCION PARA CONSULTAR MEMBRESIAS
+const getMembresiasResumen = async (req, res) => {
+  try {
+
+    const clubesSnap = await db.collection("clubes").get();
+
+    const clubes = {};
+
+    clubesSnap.forEach(doc => {
+      const data = doc.data();
+
+      clubes[doc.id] = {
+        clubId: doc.id,
+        club: data.nombre,
+        cuotas: {
+          1: { number: 1, status: "adeudada" },
+          2: { number: 2, status: "adeudada" },
+          3: { number: 3, status: "adeudada" },
+        },
+        year: null
+      };
+    });
+
+    const ticketsSnap = await db.collection("ticketsMembresias").get();
+
+    if (ticketsSnap.empty) {
+      return res.json([]);
+    }
+
+    ticketsSnap.forEach(doc => {
+
+      const ticket = doc.data();
+      const clubId = ticket.clubId;
+
+      if (!clubes[clubId]) return;
+
+      clubes[clubId].year = ticket.year;
+
+      clubes[clubId].cuotas[ticket.cuotaNumber] = {
+        number: ticket.cuotaNumber,
+        status: ticket.status
+      };
+
+    });
+
+    const result = Object.values(clubes).map(club => ({
+      clubId: club.clubId,
+      club: club.club,
+      year: club.year,
+      cuotas: Object.values(club.cuotas)
+    }));
+
+    res.json(result);
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      message: "Error al obtener resumen de membresías"
+    });
+
+  }
+};
+
+//FUNCION PARA CONSULTAR MEMBRESIA DE UN CLUB
+const getMembresiasClub = async (req, res) => {
+  try {
+
+    const { clubId, year } = req.params;
+
+    const snap = await db.collection("ticketsMembresias")
+      .where("clubId", "==", clubId)
+      .where("year", "==", Number(year))
+      .get();
+
+    const cuotas = [];
+
+    snap.forEach(doc => {
+      cuotas.push({
+        id: doc.id,
+        ...doc.data()
+      });
+    });
+
+    cuotas.sort((a, b) => a.cuotaNumber - b.cuotaNumber);
+
+    res.json(cuotas);
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      message: "Error obteniendo cuotas"
+    });
+
+  }
+};
+
+//FUNCION PARA ADMINISTRAR MEMBRESIA DE UN CLUB
+const acreditarCuota = async (req, res) => {
+  try {
+
+    const { ticketId } = req.params;
+
+    const ref = db.collection("ticketsMembresias").doc(ticketId);
+
+    await ref.update({
+      status: "acreditada",
+      acreditadoAt: new Date()
+    });
+
+    res.json({
+      message: "Cuota acreditada correctamente"
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      message: "Error acreditando cuota"
+    });
+
+  }
+};
+
+//FUNCION PARA RECHAZAR PAGO DE CUOTA
+const rechazarCuota = async (req, res) => {
+  try {
+
+    const { ticketId } = req.params;
+
+    const ref = db.collection("ticketsMembresias").doc(ticketId);
+
+    await ref.update({
+      status: "adeudada",
+      rechazadoAt: new Date()
+    });
+
+    res.json({
+      message: "Cuota marcada como impaga"
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      message: "Error rechazando cuota"
+    });
+
+  }
+};  
 
 //FUNCION PARA CREAR EMPADRONAMIENTO ASAMBAL
 const createEmpadronamiento = async (req, res) => {
@@ -856,7 +1022,6 @@ const pagarEmpadronamientoMasivo = async (req, res) => {
   }
 };
 
-
 //FUNCION PARA OBTENER AÑOS DE SEGUROS
 const getSeguroYears = async (req, res) => {
   try {
@@ -913,7 +1078,6 @@ const getSegurosByYear = async (req, res) => {
     res.status(500).json({ message: "Error interno del servidor" });
   }
 };
-
 
 //FUNCION PARA CREAR SEGURO ANUAL
 const createSeguro = async (req, res) => {
@@ -1002,6 +1166,10 @@ module.exports = {
   getCoachDetailAsambal,
   createEmpadronamiento,
   createMembresia,
+  getMembresiasResumen,
+  getMembresiasClub,
+  acreditarCuota,
+  rechazarCuota,
   getSeguroYears,
   getSegurosByYear,
   createSeguro,

@@ -18,7 +18,11 @@ const {
   getCoachDetailAsambal,
   createEmpadronamiento,
   createMembresia,
+  getMembresiasResumen,
   getSeguroYears,
+  getMembresiasClub,
+  acreditarCuota,
+  rechazarCuota,
   getSegurosByYear,
   createSeguro,
   getAllTicketsEmpadronamiento,
@@ -35,7 +39,6 @@ router.post(
   "/dev/seed-los-toldos",
   seedLosToldos
 );
-
 
 /*---------------------------------------------------
 ------------------PERFIL ASAMBAL---------------------
@@ -168,6 +171,38 @@ router.post(
   authMiddleware,
   requireRole("admin_asambal"),
   createMembresia
+);
+
+//OBTENER MEMBRESIAS
+router.get(
+  "/membresias/resumen",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getMembresiasResumen
+);
+
+//OBTENER MEMBRESIAS POR CLUB
+router.get(
+  "/membresias/:clubId/:year",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getMembresiasClub
+);
+
+//ACREDITAR CUOTA
+router.patch(
+  "/membresias/ticket/:ticketId/acreditar",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  acreditarCuota
+);
+
+//RECHAZAR CUOTA
+router.patch(
+  "/membresias/ticket/:ticketId/rechazar",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  rechazarCuota
 );
 
 //SEGUROS
