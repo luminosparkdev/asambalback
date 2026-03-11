@@ -26,6 +26,7 @@ const {
   rechazarCuota,
   getSegurosByYear,
   createSeguro,
+  getEmpadronamientoJugadoresActivo,
   getAllTicketsEmpadronamiento,
   pagarEmpadronamientoMasivo,
   createEmpadronamientoClub,
@@ -138,7 +139,7 @@ router.post(
 // EMPADRONAMIENTOS
 // CREAR EMPADRONAMIENTO JUGADORES
 router.post(
-  "/empadronamiento",
+  "/empadronamiento-jugadores",
   authMiddleware,
   requireRole("admin_asambal"),
   createEmpadronamiento
@@ -163,6 +164,13 @@ router.get(
   authMiddleware,
   requireRole("admin_asambal"),
   getAllTicketsEmpadronamiento
+);
+
+router.get(
+  "/empadronamiento-jugadores/activo",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getEmpadronamientoJugadoresActivo
 );
 
 //MEMBRESIAS

@@ -748,12 +748,43 @@ const rechazarCuota = async (req, res) => {
   }
 };  
 
+const getEmpadronamientoJugadoresActivo = async (req, res) => {
+  try {
+
+    const snap = await db
+      .collection("empadronamientos")
+      .where("status", "==", "activo")
+      .limit(1)
+      .get();
+
+    if (snap.empty) {
+      return res.json(null);
+    }
+
+    const doc = snap.docs[0];
+
+    res.json({
+      id: doc.id,
+      ...doc.data()
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    res.status(500).json({
+      message: "Error obteniendo empadronamiento activo"
+    });
+
+  }
+};
+
 //FUNCION PARA CREAR EMPADRONAMIENTO ASAMBAL
 const createEmpadronamiento = async (req, res) => {
   try {
-    const { year, amount } = req.body;
+    const { year, cuotas } = req.body;
 
-    if (!year || !amount) {
+    if (!year || !cuotas) {
       return res.status(400).json({ message: "Datos incompletos" });
     }
 
@@ -770,13 +801,20 @@ const createEmpadronamiento = async (req, res) => {
       });
     }
 
+    const cuotasFormatted = cuotas.map((c, index) => ({
+      number: index + 1,
+      amount: Number(c.amount),
+      activationDate: admin.firestore.Timestamp.fromDate(
+        new Date(c.activationDate)
+      ),
+    }));
+
     // 2️⃣ Crear empadronamiento en la colección de seguimiento
     const empRef = await db.collection("empadronamientos").add({
       year: Number(year),
-      amount,
-      type: "jugadores",
+      cuotas: cuotasFormatted,
       status: "activo",
-      createdAt: new Date(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     // 3️⃣ Crear tickets para cada jugador (solo si no existía empadronamiento)
@@ -797,12 +835,12 @@ const createEmpadronamiento = async (req, res) => {
   ticketId: ticketRef.id,
   empadronamientoId: empRef.id,
   year: Number(year),
+  cuotas: cuotasFormatted,
   jugadorId: doc.id,
   clubId: jugador.clubId, // siempre tiene clubId
   nombre: jugador.nombre, // AGREGAR nombre
   apellido: jugador.apellido, // AGREGAR apellido
-  amount,
-  status: "pendiente",
+  status: "adeudado",
   becado: false,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -1206,6 +1244,7 @@ module.exports = {
   getSeguroYears,
   getSegurosByYear,
   createSeguro,
+  getEmpadronamientoJugadoresActivo,
   getAllTicketsEmpadronamiento,
   pagarEmpadronamientoMasivo,
   createEmpadronamientoClub,

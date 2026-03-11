@@ -821,7 +821,7 @@ const getPlayerTickets = async (req, res) => {
 
     // 2️⃣ Buscar tickets del jugador
     const ticketsSnap = await db
-      .collection("tickets")
+      .collection("ticketsEmpadronamiento")
       .where("jugadorId", "==", jugadorId)
       .get();
 
