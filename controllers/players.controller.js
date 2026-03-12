@@ -295,10 +295,10 @@ const togglePlayerStatus = async (req, res) => {
 const completePlayerProfile = async (req, res) => {
   try {
     const { playerId } = req.params;
-    const { activationToken, form, tutor, clubId, nombreClub, categorias } = req.body;
+    const { activationToken, form, tutor } = req.body;
 
     // --- 1️⃣ Validaciones ---
-    if (!playerId || !activationToken || !form || !clubId || !categorias || categorias.length === 0) {
+    if (!playerId || !activationToken || !form ) {
       return res.status(400).json({ message: "Faltan datos obligatorios" });
     }
 
@@ -314,6 +314,15 @@ const completePlayerProfile = async (req, res) => {
 
       const userData = userSnap.data();
       const playerData = playerSnap.data();
+
+      const clubExistente = playerData.clubs?.[0];
+      const clubId = clubExistente?.clubId;
+      const nombreClub = clubExistente?.nombreClub;
+
+      
+      if (!clubId || clubId === "CLUB_ID_DEFAULT") {
+        throw new Error("Club inválido");
+      }
 
       if (userData.activationToken !== activationToken) {
         throw new Error("Token inválido o expirado");
@@ -336,8 +345,6 @@ const completePlayerProfile = async (req, res) => {
         // Actualizamos club existente
         updatedUserClubs[existingClubIndex] = {
           ...updatedUserClubs[existingClubIndex],
-          categorias,
-          nombreClub,
           status: "PENDIENTE",
           updatedAt: now,
         };
@@ -367,8 +374,6 @@ const completePlayerProfile = async (req, res) => {
       if (existingPlayerClubIndex >= 0) {
         updatedPlayerClubs[existingPlayerClubIndex] = {
           ...updatedPlayerClubs[existingPlayerClubIndex],
-          categorias,
-          nombreClub,
           status: "PENDIENTE",
           updatedAt: now,
         };

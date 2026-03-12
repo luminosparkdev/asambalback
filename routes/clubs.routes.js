@@ -7,6 +7,8 @@ const { createUser } = require("../controllers/users.controller");
 const {
   getPendingCoach,
   validateRoleInClub,
+  validatePlayer,
+  getPendingPlayers,
   getClubs,
   toggleClubStatus,
   getClubById,
@@ -57,6 +59,16 @@ router.post("/create-player",
     createUser(req, res);
   });
 
+//Obtener jugadores pendientes
+router.get(
+  "/pending-players",
+  authMiddleware,
+  requireRole("admin_club"),
+  getPendingPlayers
+);
+
+//Validar jugador club
+router.patch("/:id/validate-player", authMiddleware, requireRole("admin_club"), validatePlayer);
 // CATEGORIAS
 router.get(
   "/my/categories",

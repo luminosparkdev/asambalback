@@ -238,7 +238,7 @@ const getMyClubs = async (req, res) => {
     // Retornamos clubId, nombreClub y categorias
     const simplified = clubs.map(c => ({
       clubId: c.clubId,
-      nombreClub: c.nombreClub,
+      nombreClub: c.nombre,
       categorias: c.categorias || []
     }));
 
@@ -599,7 +599,15 @@ const completeProfesorProfile = async (req, res) => {
 const sendRequestJoinToCoach = async (req, res) => {
   try {
     const { email, nombre, apellido, categorias } = req.body;
-    const { clubId, nombreClub } = req.user; // admin_club que envía la solicitud
+    const club = req.user.clubs?.[0];
+
+if (!club) {
+  return res.status(400).json({ message: "Usuario sin club asociado" });
+}
+
+const { clubId, nombre: nombreClub } = club;
+
+    console.log(req.user);
 
     if (!email || !nombre?.trim() || !apellido?.trim() || !Array.isArray(categorias) || categorias.length === 0) {
       return res.status(400).json({ message: "Datos incompletos" });

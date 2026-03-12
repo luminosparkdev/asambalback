@@ -160,7 +160,7 @@ router.put(
 );
 // OBTENER TODOS LOS TICKETS DE EMPADRONAMIENTO
 router.get(
-  "/empadronamiento/tickets",
+  "/empadronamiento-jugadores/resumen",
   authMiddleware,
   requireRole("admin_asambal"),
   getAllTicketsEmpadronamiento

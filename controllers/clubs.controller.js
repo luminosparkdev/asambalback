@@ -74,8 +74,16 @@ const createOrTransferPlayer = async (req, res) => {
   try {
     const { nombre, apellido, email, categoriaPrincipal, categorias } = req.body;
 
-    const clubId = req.user.clubs?.[0]?.clubId;
-    const nombreClub = req.user.nombreClub || "Nombre del club";
+    const club = req.user.clubs?.[0];
+
+if (!club) {
+  return res.status(403).json({
+    message: "El administrador no tiene un club activo",
+  });
+}
+
+const clubId = club.clubId;
+const nombreClub = club.nombre;
 
     if (!clubId) {
       return res.status(403).json({
@@ -134,7 +142,7 @@ const createOrTransferPlayer = async (req, res) => {
         // Crear solicitud de transferencia
         await db.collection("transferRequests").add({
           jugadorId: userDoc.id,
-          clubOrigen: jugadorData.clubs[0],
+          clubOrigen: jugadorData.clubs?.find(c => c.status === "ACTIVO") || jugadorData.clubs?.[0],
           clubDestino: { clubId, nombreClub },
           jugadorNombre: `${jugadorData.nombre} ${jugadorData.apellido}`,
           categoriaPrincipal,
@@ -190,7 +198,6 @@ const createOrTransferPlayer = async (req, res) => {
         becado: false,
         createdAt: now,
         updatedAt: now,
-        clubId,
         clubs: [
           {
             clubId,
@@ -647,6 +654,65 @@ const getPendingCoach = async (req, res) => {
   }
 };
 
+const getPendingPlayers = async (req, res) => {
+  try {
+    const clubId = req.user.clubs?.[0]?.clubId;
+
+    if (!clubId) {
+      return res.status(400).json({ message: "Usuario sin club asignado" });
+    }
+
+    // Traemos solo jugadores que tengan clubs
+    const snapshot = await db
+      .collection("jugadores")
+      .where("clubs", "!=", null)
+      .get();
+
+    const pendingPlayers = [];
+
+    for (const doc of snapshot.docs) {
+      const data = doc.data();
+
+      const clubData = data.clubs?.find(
+        (c) => c.clubId === clubId && c.status === "PENDIENTE"
+      );
+
+      if (!clubData) continue;
+
+      // buscamos el usuario para obtener el email
+      let email = "-";
+
+      if (data.userId) {
+        const userSnap = await db.collection("usuarios").doc(data.userId).get();
+        email = userSnap.exists ? userSnap.data().email : "-";
+      }
+
+      pendingPlayers.push({
+        id: doc.id,
+        email,
+        nombre: data.nombre || "-",
+        apellido: data.apellido || "-",
+        año: data.año || "-",
+        becado: data.becado || false,
+        role: "jugador",
+        status: "PENDIENTE",
+
+        categorias: clubData.categorias || [],
+        categoriaPrincipal: clubData.categoriaPrincipal || null,
+        categoriasSecundarias: clubData.categoriasSecundarias || [],
+
+        clubId,
+      });
+    }
+
+    res.json(pendingPlayers);
+
+  } catch (err) {
+    console.error("❌ ERROR getPendingPlayers:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
 const getPlayersByClub = async (req, res) => {
   try {
     // Club que administra el admin (solo 1)
@@ -785,6 +851,75 @@ const notificarPagoMembresia = async (req, res) => {
   }
 };
 
+const validatePlayer = async (req, res) => {
+  try {
+    const { id: playerId } = req.params;
+    const { action, clubId } = req.body;
+
+    if (!["APPROVE", "REJECT"].includes(action)) {
+      return res.status(400).json({ message: "Acción inválida" });
+    }
+
+    if (!clubId) {
+      return res.status(400).json({ message: "ClubId requerido" });
+    }
+
+    const playerRef = db.collection("jugadores").doc(playerId);
+    const playerSnap = await playerRef.get();
+
+    if (!playerSnap.exists) {
+      return res.status(404).json({ message: "Jugador no encontrado" });
+    }
+
+    const playerData = playerSnap.data();
+
+    const clubIndex = playerData.clubs?.findIndex(
+      (c) => c.clubId === clubId
+    );
+
+    if (clubIndex === -1) {
+      return res.status(400).json({
+        message: "El jugador no pertenece a este club",
+      });
+    }
+
+    const newStatus = action === "APPROVE" ? "ACTIVO" : "RECHAZADO";
+
+    const updatedClubs = [...playerData.clubs];
+
+    updatedClubs[clubIndex] = {
+      ...updatedClubs[clubIndex],
+      status: newStatus,
+    };
+
+    const userRef = db.collection("usuarios").doc(playerData.userId);
+
+    await db.runTransaction(async (tx) => {
+
+      tx.update(playerRef, {
+        clubs: updatedClubs,
+        updatedAt: new Date(),
+      });
+
+      if (action === "APPROVE") {
+        tx.update(userRef, {
+          status: "ACTIVO",
+          updatedAt: new Date(),
+        });
+      }
+
+    });
+
+    res.json({
+      success: true,
+      clubStatus: newStatus,
+    });
+
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 
 
 
@@ -800,6 +935,8 @@ module.exports = {
   getMyClubProfile, 
   updateMyClub, 
   validateRoleInClub, 
+  getPendingPlayers,
+  validatePlayer,
   getPendingCoach, 
   getPlayersByClub, 
   getTicketsMembresias, 

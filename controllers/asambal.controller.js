@@ -975,45 +975,40 @@ const createEmpadronamientoClub = async (req, res) => {
 // FUNCION PARA OBTENER TODOS LOS TICKETS DE EMPADRONAMIENTO
 const getAllTicketsEmpadronamiento = async (req, res) => {
   try {
-    const [jugadoresSnap, clubSnap] = await Promise.all([
-      db.collection("ticketsEmpadronamiento")
-        .orderBy("createdAt", "desc")
-        .get(),
 
-      db.collection("ticketsEmpadronamientoClub")
-        .orderBy("createdAt", "desc")
-        .get()
-    ]);
+    const snap = await db
+      .collection("ticketsEmpadronamiento")
+      .orderBy("createdAt", "desc")
+      .get();
 
-    // 👇 ACA VA LO QUE ME MOSTRASTE
-    const ticketsJugadores = jugadoresSnap.docs.map(doc => {
+    const tickets = snap.docs.map(doc => {
       const data = doc.data();
+
+      const cuotasNormalizadas = (data.cuotas || []).map(c => ({
+        number: c.number,
+        amount: c.amount,
+        status: c.status || c.estado || "pendiente", // 👈 Aca está la magia
+        activationDate: c.activationDate
+      }));
+
       return {
         id: doc.id,
-        tipo: "jugador",
-        ...data,
-        amount: data.amount, // ya lo trae pero lo dejamos explícito
+        player: `${data.nombre} ${data.apellido}`,
+        playerId: data.jugadorId,
+        year: data.year,
+        cuotas: cuotasNormalizadas,
+        becado: data.becado || false,
+        createdAt: data.createdAt
       };
     });
 
-    const ticketsClub = clubSnap.docs.map(doc => {
-      const data = doc.data();
-      return {
-        id: doc.id,
-        tipo: "club",
-        ...data,
-        amount: data.totalAmount, // 👈 normalizamos
-      };
-    });
-
-    const todos = [...ticketsJugadores, ...ticketsClub]
-      .sort((a, b) => b.createdAt.toDate() - a.createdAt.toDate());
-
-    res.json(todos);
+    res.json(tickets);
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error al obtener tickets" });
+    console.error("Error obteniendo tickets de empadronamiento:", error);
+    res.status(500).json({
+      message: "Error al obtener tickets de empadronamiento"
+    });
   }
 };
 
