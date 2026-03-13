@@ -77,7 +77,7 @@ router.patch(
 );
 
 router.get(
-  "/tickets",
+  "/empadronamiento/tickets",
   authMiddleware,
   requireRole("jugador"),
   getPlayerTickets

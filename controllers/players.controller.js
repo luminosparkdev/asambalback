@@ -37,7 +37,6 @@ const createPlayer = async (req, res) => {
     // --- 2. Validar que el profesor tiene el club seleccionado ---
     let profesorClubIds = req.user.clubIds || [];
 
-    // Si es profesor y no tiene clubIds en token, lo buscamos en Firestore
     if (req.user.roles.includes("profesor") && profesorClubIds.length === 0) {
       const profSnap = await db.collection("profesores").where("userId", "==", coachId).limit(1).get();
       if (!profSnap.empty) {
@@ -58,14 +57,12 @@ const createPlayer = async (req, res) => {
       const userData = userDoc.data();
       const rolesArray = Array.isArray(userData.roles) ? userData.roles : Object.values(userData.roles || {});
 
-      // --- 3a. Usuario admin → error ---
       if (rolesArray.includes("admin_club") || rolesArray.includes("admin_asambal")) {
         return res.status(400).json({
           message: "No se pudo cargar al jugador por validación de roles previos",
         });
       }
 
-      // --- 3b. Usuario profesor existente ---
       if (rolesArray.includes("profesor")) {
         return res.status(200).json({
           code: "PROFESOR_EXISTENTE",
@@ -74,23 +71,19 @@ const createPlayer = async (req, res) => {
         });
       }
 
-      // --- 3c. Usuario jugador existente ---
       if (rolesArray.includes("jugador")) {
         const jugadorSnap = await db.collection("jugadores").doc(userDoc.id).get();
         const jugadorData = jugadorSnap.data();
 
-        // Buscar si el jugador ya tiene el club seleccionado
         const clubExistente = jugadorData.clubs.find(c => c.clubId === clubId);
 
         if (!clubExistente) {
-          // El jugador existe pero no tiene el club seleccionado
           return res.status(200).json({
             code: "JUGADOR_EXISTENTE_OTRO_CLUB",
             message: "El jugador pertenece a otro club. ¿Desea iniciar solicitud de pase?",
             userId: userDoc.id,
           });
         } else {
-          // El jugador tiene el club seleccionado, verificamos categorías
           const categoriasNuevas = categorias.filter(c => !clubExistente.categorias.includes(c));
           if (categoriasNuevas.length === 0) {
             return res.status(400).json({
@@ -114,7 +107,6 @@ const createPlayer = async (req, res) => {
     const jugadorRef = db.collection("jugadores").doc(userRef.id);
     const now = new Date();
 
-    // Buscar nombre del club desde profesor o admin
     let nombreClub = "Nombre del club";
     if (req.user.roles.includes("profesor")) {
       const profSnap = await db
@@ -130,6 +122,9 @@ const createPlayer = async (req, res) => {
       }
     }
 
+    const categoriaPrincipal = categorias[0];
+    const categoriasSecundarias = categorias.slice(1);
+
     await db.runTransaction(async (tx) => {
       tx.set(userRef, {
         email,
@@ -143,7 +138,8 @@ const createPlayer = async (req, res) => {
           {
             clubId,
             nombreClub,
-            categorias,
+            categoriaPrincipal,
+            categoriasSecundarias,
             status: "INCOMPLETO",
             updatedAt: now,
           }
@@ -155,7 +151,7 @@ const createPlayer = async (req, res) => {
         apellido,
         email,
         userId: userRef.id,
-        coachId, // <-- aquí asignamos coachId plano para facilitar consultas
+        coachId,
         status: "INCOMPLETO",
         habilitadoAsambal: false,
         becado: false,
@@ -165,7 +161,8 @@ const createPlayer = async (req, res) => {
           {
             clubId,
             nombreClub,
-            categorias,
+            categoriaPrincipal,
+            categoriasSecundarias,
             status: "INCOMPLETO",
             updatedAt: now,
           }
@@ -177,7 +174,11 @@ const createPlayer = async (req, res) => {
     await sendActivationEmail(email, activationToken, email);
 
     // --- 6. Responder al front ---
-    res.json({ success: true, userId: userRef.id });
+    res.json({
+      code: "JUGADOR_CREADO",
+      message: "El jugador fue creado y se envió el email de activación",
+      userId: userRef.id
+    });
 
   } catch (err) {
     console.error(err);
@@ -408,37 +409,106 @@ const completePlayerProfile = async (req, res) => {
 
 const validatePlayer = async (req, res) => {
   try {
-    const { id } = req.params;
-    const {action} = req.body;
+    const { id: playerId } = req.params;
+    const { action, clubId } = req.body;
 
     if (!["APPROVE", "REJECT"].includes(action)) {
       return res.status(400).json({ message: "Acción inválida" });
     }
 
-    const playerRef = db.collection("jugadores").doc(id);
-    const playerDoc = await playerRef.get();
+    if (!clubId) {
+      return res.status(400).json({ message: "ClubId requerido" });
+    }
 
-    if (!playerDoc.exists) {
+    const playerRef = db.collection("jugadores").doc(playerId);
+    const playerSnap = await playerRef.get();
+
+    if (!playerSnap.exists) {
       return res.status(404).json({ message: "Jugador no encontrado" });
     }
 
-    const { userId } = playerDoc.data();
+    const playerData = playerSnap.data();
+    const { userId } = playerData;
+
     const newStatus = action === "APPROVE" ? "ACTIVO" : "RECHAZADO";
 
+    const userRef = db.collection("usuarios").doc(userId);
+
+    const currentYear = new Date().getFullYear();
+
+    let empadronamiento = null;
+
+    if (action === "APPROVE") {
+      const empQuery = await db
+        .collection("empadronamientos")
+        .where("year", "==", currentYear)
+        .where("status", "==", "activo")
+        .limit(1)
+        .get();
+
+      if (!empQuery.empty) {
+        empadronamiento = {
+          id: empQuery.docs[0].id,
+          ...empQuery.docs[0].data(),
+        };
+      }
+    }
+
     await db.runTransaction(async (tx) => {
+      // actualizar jugador
       tx.update(playerRef, {
         status: newStatus,
         isAuthorized: action === "APPROVE",
         updatedAt: new Date(),
       });
 
-      tx.update(db.collection("usuarios").doc(userId), {
+      // actualizar usuario
+      tx.update(userRef, {
         status: newStatus,
         updatedAt: new Date(),
       });
+
+      if (action === "APPROVE" && empadronamiento) {
+        const existingTicketQuery = await db
+          .collection("ticketsEmpadronamiento")
+          .where("jugadorId", "==", playerId)
+          .where("year", "==", currentYear)
+          .limit(1)
+          .get();
+
+        if (existingTicketQuery.empty) {
+          const ticketRef = db.collection("ticketsEmpadronamiento").doc();
+
+          const cuotasInicializadas = empadronamiento.cuotas.map((c) => ({
+            number: c.number,
+            amount: c.amount,
+            activationDate: c.activationDate,
+            status: "pendiente",
+            paymentId: null,
+          }));
+
+          tx.set(ticketRef, {
+            ticketId: ticketRef.id,
+            jugadorId: playerId,
+            clubId,
+            empadronamientoId: empadronamiento.id,
+            nombre: playerData.nombre,
+            apellido: playerData.apellido,
+            becado: false,
+            cuotas: cuotasInicializadas,
+            year: empadronamiento.year,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        }
+      }
     });
 
-    res.json({ message: "Jugador validado correctamente" });
+    res.json({
+      success: true,
+      status: newStatus,
+    });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });

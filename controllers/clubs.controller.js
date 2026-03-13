@@ -662,7 +662,17 @@ const getPendingPlayers = async (req, res) => {
       return res.status(400).json({ message: "Usuario sin club asignado" });
     }
 
-    // Traemos solo jugadores que tengan clubs
+    // Traemos todas las categorías una vez
+    const categoriasSnap = await db.collection("categorias").get();
+    const categoriaMap = {};
+
+    categoriasSnap.forEach(doc => {
+      const data = doc.data();
+
+      // armamos "Mayor femenino", "Infantil mixto", etc
+      categoriaMap[doc.id] = `${data.nombre} ${data.genero}`.trim();
+    });
+
     const snapshot = await db
       .collection("jugadores")
       .where("clubs", "!=", null)
@@ -679,13 +689,19 @@ const getPendingPlayers = async (req, res) => {
 
       if (!clubData) continue;
 
-      // buscamos el usuario para obtener el email
-      let email = "-";
+      // email
+      let email = data.email || "-";
 
       if (data.userId) {
         const userSnap = await db.collection("usuarios").doc(data.userId).get();
-        email = userSnap.exists ? userSnap.data().email : "-";
+        if (userSnap.exists) {
+          email = userSnap.data().email || email;
+        }
       }
+
+      // nombre de categoria
+      const categoriaNombre =
+        categoriaMap[clubData.categoriaPrincipal] || "-";
 
       pendingPlayers.push({
         id: doc.id,
@@ -696,6 +712,8 @@ const getPendingPlayers = async (req, res) => {
         becado: data.becado || false,
         role: "jugador",
         status: "PENDIENTE",
+
+        categoria: categoriaNombre,
 
         categorias: clubData.categorias || [],
         categoriaPrincipal: clubData.categoriaPrincipal || null,
@@ -893,19 +911,91 @@ const validatePlayer = async (req, res) => {
     };
 
     const userRef = db.collection("usuarios").doc(playerData.userId);
+    const userSnap = await userRef.get();
+    const userData = userSnap.data();
+
+    let updatedUserClubs = userData?.clubs ? [...userData.clubs] : [];
+
+    const userClubIndex = updatedUserClubs.findIndex(
+      (c) => c.clubId === clubId
+    );
+
+    if (userClubIndex !== -1) {
+      updatedUserClubs[userClubIndex] = {
+        ...updatedUserClubs[userClubIndex],
+        status: newStatus,
+      };
+    }
+
+    const currentYear = new Date().getFullYear();
+
+    let empadronamiento = null;
+
+    if (action === "APPROVE") {
+      const empQuery = await db
+        .collection("empadronamientos")
+        .where("year", "==", currentYear)
+        .where("status", "==", "activo")
+        .limit(1)
+        .get();
+
+      if (!empQuery.empty) {
+        empadronamiento = {
+          id: empQuery.docs[0].id,
+          ...empQuery.docs[0].data(),
+        };
+      }
+    }
 
     await db.runTransaction(async (tx) => {
 
       tx.update(playerRef, {
+        status: newStatus,
         clubs: updatedClubs,
         updatedAt: new Date(),
       });
 
-      if (action === "APPROVE") {
-        tx.update(userRef, {
-          status: "ACTIVO",
-          updatedAt: new Date(),
-        });
+      tx.update(userRef, {
+        status: newStatus,
+        clubs: updatedUserClubs,
+        updatedAt: new Date(),
+      });
+
+      if (action === "APPROVE" && empadronamiento) {
+
+        const existingTicketQuery = await db
+          .collection("ticketsEmpadronamiento")
+          .where("jugadorId", "==", playerId)
+          .where("year", "==", currentYear)
+          .limit(1)
+          .get();
+
+        if (existingTicketQuery.empty) {
+
+          const ticketRef = db.collection("ticketsEmpadronamiento").doc();
+
+          const cuotasInicializadas = empadronamiento.cuotas.map((c) => ({
+            number: c.number,
+            amount: c.amount,
+            activationDate: c.activationDate,
+            status: "pendiente",
+            paymentId: null,
+          }));
+
+          tx.set(ticketRef, {
+            ticketId: ticketRef.id,
+            jugadorId: playerId,
+            clubId,
+            empadronamientoId: empadronamiento.id,
+            nombre: playerData.nombre,
+            apellido: playerData.apellido,
+            becado: false,
+            cuotas: cuotasInicializadas,
+            year: empadronamiento.year,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          });
+        }
       }
 
     });
@@ -919,9 +1009,6 @@ const validatePlayer = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
-
-
 
 
 

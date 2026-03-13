@@ -176,11 +176,8 @@ const createProfesor = async (req, res) => {
 
 const getPendingPlayers = async (req, res) => {
   try {
-    console.log("🧠 req.user =", JSON.stringify(req.user, null, 2));
-
     const { clubId } = req.params;
 
-    // Leemos los clubIds del header enviado por el frontend
     const professorClubIds = JSON.parse(req.headers["x-professor-clubs"] || "[]");
 
     if (!clubId) {
@@ -190,6 +187,15 @@ const getPendingPlayers = async (req, res) => {
     if (!professorClubIds.includes(clubId)) {
       return res.status(403).json({ message: "El profesor no pertenece a este club" });
     }
+
+    // 🔹 Traemos categorías
+    const categoriasSnap = await db.collection("categorias").get();
+    const categoriaMap = {};
+
+    categoriasSnap.forEach(doc => {
+      const data = doc.data();
+      categoriaMap[doc.id] = `${data.nombre} ${data.genero}`.trim();
+    });
 
     const snapshot = await db
       .collection("jugadores")
@@ -205,18 +211,33 @@ const getPendingPlayers = async (req, res) => {
         (club) => club.clubId === clubId && club.status === "PENDIENTE"
       );
 
-      if (pendingClub) {
-        pendingPlayers.push({
-          id: doc.id,
-          nombre: data.nombre,
-          apellido: data.apellido,
-          email: data.email,
-          categorias: pendingClub.categorias || [],
-        });
-      }
+      if (!pendingClub) return;
+
+      // traducimos categorías
+      const categoriaPrincipal =
+        categoriaMap[pendingClub.categoriaPrincipal] || "";
+
+      const categoriasSecundarias = (pendingClub.categoriasSecundarias || [])
+        .map(id => categoriaMap[id])
+        .filter(Boolean);
+
+      pendingPlayers.push({
+        id: doc.id,
+        nombre: data.nombre || "-",
+        apellido: data.apellido || "-",
+        email: data.email || "-",
+        clubs: [
+          {
+            clubId,
+            categoriaPrincipal,
+            categoriasSecundarias,
+          }
+        ]
+      });
     });
 
     return res.json(pendingPlayers);
+
   } catch (err) {
     console.error("❌ ERROR getPendingPlayers:", err);
     return res.status(500).json({ message: "Error interno del servidor" });
@@ -225,8 +246,13 @@ const getPendingPlayers = async (req, res) => {
 
 const getMyClubs = async (req, res) => {
   try {
-    const userId = req.user.id; 
-    const coachSnap = await db.collection("profesores").where("userId", "==", userId).get();
+    const userId = req.user.id;
+
+    const coachSnap = await db
+      .collection("profesores")
+      .where("userId", "==", userId)
+      .limit(1)
+      .get();
 
     if (coachSnap.empty) {
       return res.status(404).json({ message: "Profesor no encontrado" });
@@ -235,14 +261,33 @@ const getMyClubs = async (req, res) => {
     const coachData = coachSnap.docs[0].data();
     const clubs = coachData.clubs || [];
 
-    // Retornamos clubId, nombreClub y categorias
-    const simplified = clubs.map(c => ({
-      clubId: c.clubId,
-      nombreClub: c.nombre,
-      categorias: c.categorias || []
+    // traer todas las categorias
+    const categoriasSnap = await db.collection("categorias").get();
+
+    const categoriaMap = {};
+
+    categoriasSnap.forEach((doc) => {
+      const data = doc.data();
+
+      const key = `${data.nombre} ${data.genero}`;
+
+      categoriaMap[key] = {
+        id: doc.id,
+        nombre: data.nombre,
+        genero: data.genero,
+      };
+    });
+
+    const simplified = clubs.map((club) => ({
+      clubId: club.clubId,
+      nombreClub: club.nombre || club.nombreClub,
+      categorias: (club.categorias || [])
+        .map((cat) => categoriaMap[cat])
+        .filter(Boolean),
     }));
 
     res.json(simplified);
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });
@@ -834,40 +879,102 @@ const updateMyCoachProfile = async (req, res) => {
 // Profesores aprueban/rechazan jugadores de su club
 const validatePlayersInClub = async (req, res) => {
   try {
-    const { userId, clubId, action } = req.body; // action = "APPROVE" | "REJECT"
+    const { userId, clubId, action } = req.body;
+
     const profesorClubIds = req.user.clubs?.map(c => c.clubId) || [];
 
     if (!clubId || !profesorClubIds.includes(clubId)) {
       return res.status(403).json({ message: "No se puede validar" });
     }
-    // Buscamos usuario jugador
-    const userRef = db.collection("usuarios").doc(userId);
-    const userSnap = await userRef.get();
-    if (!userSnap.exists) return res.status(404).json({ message: "Usuario no encontrado" });
 
-    const userData = userSnap.data();
-
-    if (!userData.roles?.jugador) return res.status(400).json({ message: "Usuario no tiene rol jugador" });
-    
     const newEstado = action === "APPROVE" ? "ACTIVO" : "RECHAZADO";
-    const updateUserClub = (userData.clubs || []).map(c => { if (c.clubId === clubId) return { ...c, status: action === "APPROVE" ? "ACTIVO" : "RECHAZADO" }; return c; });
 
-    await userRef.update({ clubs: updateUserClub, updatedAt: new Date() });
-
-    // Actualizamos estado en colección jugadores
+    const userRef = db.collection("usuarios").doc(userId);
     const playerRef = db.collection("jugadores").doc(userId);
-    const playerSnap = await playerRef.get();
-    if (!playerSnap.exists) return res.status(404).json({ message: "Jugador no encontrado" });
 
-    const playerData = playerSnap.data();
+    const now = new Date();
 
-    const updatePlayerClubs = (playerData.clubs || []).map(c => { if (c.clubId === clubId) return { ...c, status: newEstado, updatedAt: new Date() }; return c; });
-    await playerRef.update({
-      updatedAt: new Date(),
-      clubs: updatePlayerClubs
+    await db.runTransaction(async (tx) => {
+
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) throw new Error("Usuario no encontrado");
+
+      const userData = userSnap.data();
+
+      const playerSnap = await tx.get(playerRef);
+      if (!playerSnap.exists) throw new Error("Jugador no encontrado");
+
+      const playerData = playerSnap.data();
+
+      if (!userData.roles?.includes?.("jugador") && !userData.roles?.jugador) {
+        throw new Error("Usuario no tiene rol jugador");
+      }
+
+      // --- actualizar clubs en usuario
+      const updateUserClub = (userData.clubs || []).map(c => {
+        if (c.clubId === clubId) {
+          return {
+            ...c,
+            status: newEstado,
+            updatedAt: now
+          };
+        }
+        return c;
+      });
+
+      tx.update(userRef, {
+        clubs: updateUserClub,
+        status: action === "APPROVE" ? "ACTIVO" : userData.status,
+        updatedAt: now
+      });
+
+      // --- actualizar clubs en jugador
+      const updatePlayerClubs = (playerData.clubs || []).map(c => {
+        if (c.clubId === clubId) {
+          return {
+            ...c,
+            status: newEstado,
+            updatedAt: now
+          };
+        }
+        return c;
+      });
+
+      tx.update(playerRef, {
+        clubs: updatePlayerClubs,
+        status: action === "APPROVE" ? "ACTIVO" : playerData.status,
+        updatedAt: now
+      });
+
+      // --- generar ticket de empadronamiento si se aprueba
+      if (action === "APPROVE") {
+
+        const clubData = playerData.clubs.find(c => c.clubId === clubId);
+
+        const ticketRef = db.collection("empadronamientos").doc();
+
+        tx.set(ticketRef, {
+          userId,
+          jugadorId: userId,
+          clubId,
+          nombreClub: clubData?.nombreClub || "",
+          categoriaPrincipal: clubData?.categoriaPrincipal || "",
+          categoriasSecundarias: clubData?.categoriasSecundarias || [],
+          estado: "PENDIENTE",
+          createdBy: req.user.email,
+          createdAt: now,
+          updatedAt: now
+        });
+
+      }
+
     });
 
-    res.json({ success: true, status: newEstado });
+    res.json({
+      success: true,
+      status: newEstado
+    });
+
   } catch (err) {
     console.error("❌ ERROR validatePlayersInClub (Profesor):", err);
     res.status(500).json({ message: err.message });
