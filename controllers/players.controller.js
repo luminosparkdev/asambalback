@@ -22,7 +22,7 @@ const generateActivationToken = () => crypto.randomBytes(20).toString("hex");
 // CREAR JUGADOR y USUARIO JUGADOR
 const createPlayer = async (req, res) => {
   try {
-    const { nombre, apellido, email, clubId, categorias } = req.body;
+    const { nombre, apellido, email, clubId, categorias, genero } = req.body;
 
     // --- 1. Validaciones básicas ---
     if (!nombre?.trim() || !apellido?.trim() || !email?.trim() || !clubId || !Array.isArray(categorias) || categorias.length === 0) {
@@ -134,6 +134,8 @@ const createPlayer = async (req, res) => {
         createdBy: req.user.email,
         createdAt: now,
         updatedAt: now,
+        certificadoMedico: false,
+        sexo: genero,
         clubs: [
           {
             clubId,
@@ -155,6 +157,8 @@ const createPlayer = async (req, res) => {
         status: "INCOMPLETO",
         habilitadoAsambal: false,
         becado: false,
+        certificadoMedico: false,
+        sexo: genero,
         createdAt: now,
         updatedAt: now,
         clubs: [

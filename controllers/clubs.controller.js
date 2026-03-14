@@ -72,25 +72,28 @@ const createClubWithAdmin = async (req, res) => {
 //CREAMOS JUGADOR CON ADMIN CLUB, SI EXISTE SE SOLICITA PASE AL CLUB ORIGEN
 const createOrTransferPlayer = async (req, res) => {
   try {
-    const { nombre, apellido, email, categoriaPrincipal, categorias } = req.body;
+    const {
+      nombre,
+      apellido,
+      email,
+      categoriaPrincipal,
+      categorias,
+      coachId: frontCoachId, // coachId enviado desde el front
+    } = req.body;
 
+    // --- Validar que el club del admin esté activo ---
     const club = req.user.clubs?.[0];
 
-if (!club) {
-  return res.status(403).json({
-    message: "El administrador no tiene un club activo",
-  });
-}
-
-const clubId = club.clubId;
-const nombreClub = club.nombre;
-
-    if (!clubId) {
+    if (!club) {
       return res.status(403).json({
         message: "El administrador no tiene un club activo",
       });
     }
 
+    const clubId = club.clubId;
+    const nombreClub = club.nombre;
+
+    // --- Validaciones básicas ---
     if (!nombre?.trim() || !apellido?.trim() || !email?.trim() || !categoriaPrincipal) {
       return res.status(400).json({
         message: "Faltan datos obligatorios",
@@ -101,13 +104,14 @@ const nombreClub = club.nombre;
       ? categorias.filter((c) => c !== categoriaPrincipal)
       : [];
 
-    // Buscar si el usuario ya existe
+    // --- Buscar si el usuario ya existe ---
     const userSnap = await db
       .collection("usuarios")
       .where("email", "==", email)
       .limit(1)
       .get();
 
+    // --- Si el usuario existe ---
     if (!userSnap.empty) {
       const userDoc = userSnap.docs[0];
       const jugadorSnap = await db.collection("jugadores").doc(userDoc.id).get();
@@ -142,7 +146,9 @@ const nombreClub = club.nombre;
         // Crear solicitud de transferencia
         await db.collection("transferRequests").add({
           jugadorId: userDoc.id,
-          clubOrigen: jugadorData.clubs?.find(c => c.status === "ACTIVO") || jugadorData.clubs?.[0],
+          clubOrigen:
+            jugadorData.clubs?.find((c) => c.status === "ACTIVO") ||
+            jugadorData.clubs?.[0],
           clubDestino: { clubId, nombreClub },
           jugadorNombre: `${jugadorData.nombre} ${jugadorData.apellido}`,
           categoriaPrincipal,
@@ -159,13 +165,15 @@ const nombreClub = club.nombre;
       }
     }
 
-    // Crear jugador nuevo
+    // --- Si el usuario no existe: crear jugador nuevo ---
     const activationToken = generateActivationToken();
 
     const userRef = db.collection("usuarios").doc();
     const jugadorRef = db.collection("jugadores").doc(userRef.id);
-
     const now = new Date();
+
+    // Usar coachId enviado desde el front o null si no llega
+    const coachId = frontCoachId || null;
 
     await db.runTransaction(async (tx) => {
       tx.set(userRef, {
@@ -176,6 +184,7 @@ const nombreClub = club.nombre;
         createdBy: req.user.email,
         createdAt: now,
         updatedAt: now,
+        certificadoMedico: false, // campo agregado
         clubs: [
           {
             clubId,
@@ -193,9 +202,11 @@ const nombreClub = club.nombre;
         apellido,
         email,
         userId: userRef.id,
+        coachId, // asignado desde front
         status: "INCOMPLETO",
         habilitadoAsambal: false,
         becado: false,
+        certificadoMedico: false, // campo agregado
         createdAt: now,
         updatedAt: now,
         clubs: [
@@ -211,8 +222,9 @@ const nombreClub = club.nombre;
       });
     });
 
-    // Verificar empadronamiento vigente y crear ticket para el nuevo jugador
-    const empSnap = await db.collection("empadronamientos")
+    // --- Crear ticket de empadronamiento si hay empadronamiento activo ---
+    const empSnap = await db
+      .collection("empadronamientos")
       .where("status", "==", "activo")
       .where("type", "==", "jugadores")
       .limit(1)
@@ -239,12 +251,12 @@ const nombreClub = club.nombre;
         updatedAt: new Date(),
       });
 
-      // Actualizar jugador para marcar habilitadoAsambal = false si es necesario
       await db.collection("jugadores").doc(userRef.id).update({
         habilitadoAsambal: false,
       });
     }
 
+    // --- Enviar mail de activación ---
     await sendActivationEmail(email, activationToken, email);
 
     return res.status(200).json({

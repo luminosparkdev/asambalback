@@ -24,6 +24,7 @@
     "mercadopago": "^2.12.0",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.12",
+    "pdf-lib": "^1.17.1",
     "sharp": "^0.34.5"
   },
   "devDependencies": {
