@@ -6,6 +6,10 @@ const sharp = require("sharp");
 const db = getFirestore();
 const storage = getStorage().bucket();
 
+/*----------------------------------------------------
+----------- CONTROLADORES JUGADORES ------------------
+----------------------------------------------------*/
+
 // Subir certificado
 const uploadCertificado = async (req, res) => {
   try {
@@ -155,9 +159,124 @@ const deleteCertificado = async (req, res) => {
   }
 };
 
+/*----------------------------------------------------
+----------- CONTROLADORES PROFESORES -----------------
+----------------------------------------------------*/
+
+// Listar certificados pendientes para revisión
+const getPendingCertificados = async (req, res) => {
+  try {
+
+    const year = new Date().getFullYear();
+
+    const snapshot = await db
+      .collection("certificados")
+      .where("year", "==", year)
+      .where("status", "==", "PENDIENTE")
+      .get();
+
+    const certificados = snapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+
+    res.json(certificados);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error al obtener certificados pendientes" });
+  }
+};
+
+// Aprobar certificado
+const approveCertificado = async (req, res) => {
+  try {
+
+    const { id } = req.params;
+
+    const docRef = db.collection("certificados").doc(id);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Certificado no encontrado" });
+    }
+
+    await docRef.update({
+      status: "APROBADO",
+      reviewedAt: new Date(),
+      reviewedBy: req.user.id
+    });
+
+    res.json({ message: "Certificado aprobado" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error al aprobar certificado" });
+  }
+};
+
+// Rechazar certificado
+const rejectCertificado = async (req, res) => {
+  try {
+
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const docRef = db.collection("certificados").doc(id);
+
+    await docRef.update({
+      status: "RECHAZADO",
+      rejectedReason: reason || null,
+      reviewedAt: new Date(),
+      reviewedBy: req.user.id
+    });
+
+    res.json({ message: "Certificado rechazado" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error al rechazar certificado" });
+  }
+};
+
+// Obtener URL de certificado
+const getCertificadoFile = async (req, res) => {
+  try {
+
+    const { id } = req.params;
+
+    const doc = await db.collection("certificados").doc(id).get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Certificado no encontrado" });
+    }
+
+    const data = doc.data();
+
+    const file = storage.file(data.fileName);
+
+    const [url] = await file.getSignedUrl({
+      action: "read",
+      expires: Date.now() + 1000 * 60 * 10 // 10 minutos
+    });
+
+    res.json({ url });
+
+  } catch (err) {
+    console.error("Error al generar signed URL:", err);
+    res.status(500).json({
+      message: "Error al obtener el archivo"
+    });
+  }
+};
+
 module.exports = {
   uploadCertificado,
   getMyCertificados,
   deleteExpiredCertificados,
   deleteCertificado,
+  getPendingCertificados,
+  approveCertificado,
+  rejectCertificado,
+  getCertificadoFile
 };
