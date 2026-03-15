@@ -13,6 +13,7 @@ const jugadoresRoutes = require("./routes/players.routes");
 const categoriesRoutes = require("./routes/categories.routes");
 const mercadopagoRoutes = require("./routes/mercadopago.routes");
 const certificadosRoutes = require("./routes/certificados.routes");
+const webhookRoutes = require("./routes/webhook.routes");
 
 const app = express();
 
@@ -35,6 +36,7 @@ app.use("/api/heroclubs", heroclubsRoutes);
 app.use("/api/players", jugadoresRoutes);
 app.use("/api/categories", categoriesRoutes);
 app.use("/api/pagos", mercadopagoRoutes);
+app.use("/api/webhooks", webhookRoutes);
 app.use("/api/certificados", certificadosRoutes);
 
 const PORT = process.env.PORT || 3000;
