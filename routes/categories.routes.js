@@ -8,7 +8,7 @@ const { getCategories } = require("../controllers/categories.controller");
 router.get(
     "/",
     authMiddleware,
-    requireRole("admin_asambal", "admin_club", "profesor"),
+    requireRole("admin_asambal", "admin_club", "profesor", "jugador"),
     getCategories
 );
 

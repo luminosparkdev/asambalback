@@ -66,7 +66,6 @@ const seedLosToldos = async (req, res) => {
   }
 };
 
-
 //FUNCION PARA SERIALIZAR CAMPOS DE FECHA
 const serializeTimestamps = (data) => {
   const result = {};
