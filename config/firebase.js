@@ -1,12 +1,11 @@
 const admin = require("firebase-admin");
-const serviceAccount = require("./firebaseKey.json"); 
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  storageBucket: "asambal.firebasestorage.app",
+  credential: admin.credential.applicationDefault(),
+  storageBucket: "asambal.appspot.com"
 });
 
 const db = admin.firestore();
-const storage = admin.storage();
+const bucket = admin.storage().bucket();
 
-module.exports = { admin, db, storage };
+module.exports = { admin, db, bucket };
