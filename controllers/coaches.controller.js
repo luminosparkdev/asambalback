@@ -983,7 +983,7 @@ const validatePlayersInClub = async (req, res) => {
 
 const getSeguros = async (req, res) => {
   try {
-    const profesorId = req.user.uid; // viene del authMiddleware
+    const profesorId = req.user.id; // viene del authMiddleware
     const year = req.query.year ? Number(req.query.year) : null;
 
     if (!profesorId) {
