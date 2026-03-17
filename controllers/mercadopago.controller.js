@@ -114,7 +114,7 @@ const crearPreferencia = async (req, res) => {
           cuota_numero: cuotaNumero
         },
 
-        notification_url: "https://untemperate-unstultifying-mckayla.ngrok-free.dev/api/webhooks/mercadopago",
+        notification_url: "https://asambal-api-303270276070.southamerica-east1.run.app//api/webhooks/mercadopago",
 
         back_urls: {
           success: "http://localhost:5173/pago-exitoso",

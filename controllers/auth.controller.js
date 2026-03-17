@@ -1,28 +1,28 @@
 const { db } = require("../config/firebase");
-const bcrypt = require("bcryptjs");
 const { createAuthUserIfNotExists } = require("../utils/firebaseAuth");
 const { generateAccessToken, generateRefreshToken, verifyRefreshToken } = require("../utils/token");
 const { getAuth } = require("firebase-admin/auth");
+const axios = require("axios");
 
-//LOGIN
+// LOGIN
 const login = async (req, res) => {
   try {
     const { email, password } = req.body;
     const auth = getAuth();
 
     // 1️⃣ Verificar usuario en Auth
+    let fbUser;
     try {
-      await auth.getUserByEmail(email);
+      fbUser = await auth.getUserByEmail(email);
     } catch (err) {
       return res.status(400).json({ message: "Usuario no encontrado" });
     }
 
     // 2️⃣ Validar password vía Firebase REST
-    const axios = require("axios");
     const fbKey = process.env.FIREBASE_API_KEY;
-
+    let fbLoginResponse;
     try {
-      await axios.post(
+      const response = await axios.post(
         `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${fbKey}`,
         {
           email,
@@ -30,8 +30,20 @@ const login = async (req, res) => {
           returnSecureToken: true,
         }
       );
+      fbLoginResponse = response.data;
     } catch (err) {
-      return res.status(400).json({ message: "Contraseña incorrecta" });
+      // Devuelve error real de Firebase
+      const errMsg = err.response?.data?.error?.message;
+      if (errMsg === "EMAIL_NOT_FOUND") {
+        return res.status(400).json({ message: "Usuario no encontrado" });
+      } else if (errMsg === "INVALID_PASSWORD") {
+        return res.status(400).json({ message: "Contraseña incorrecta" });
+      } else if (errMsg === "USER_DISABLED") {
+        return res.status(403).json({ message: "Usuario deshabilitado" });
+      } else {
+        console.error("Firebase REST LOGIN ERROR:", errMsg);
+        return res.status(500).json({ message: "Error interno de autenticación" });
+      }
     }
 
     // 3️⃣ Obtener usuario de Firestore
@@ -49,34 +61,26 @@ const login = async (req, res) => {
     const userData = userDoc.data();
 
     if (userData.status !== "ACTIVO") {
-  return res.status(403).json({
-    message: "Tu cuenta aún no ha sido validada"
-  });
-}
+      return res.status(403).json({
+        message: "Tu cuenta aún no ha sido validada",
+      });
+    }
 
     const roles = Array.isArray(userData.roles)
       ? userData.roles
       : Object.values(userData.roles || {});
 
-    // 🔥 CLUBIDS UNIFICADOS
     const clubs = userData.clubs || [];
 
-    // 4️⃣ Token
+    // 4️⃣ Generar tokens
     const accessToken = generateAccessToken({
       id: userDoc.id,
       email: userData.email,
       roles,
-      clubs,// 👈 AHORA SÍ
+      clubs,
     });
 
-    const refreshToken = generateRefreshToken({
-      email: userData.email,
-    });
-
-    console.log("ACCESS TOKEN: ", accessToken);
-    console.log("REFRESH TOKEN: ", refreshToken);
-    console.log("USER DATA: ", userData);
-    console.log("Clubes  : ", clubs);
+    const refreshToken = generateRefreshToken({ email: userData.email });
 
     // 5️⃣ Response
     return res
@@ -84,6 +88,7 @@ const login = async (req, res) => {
         httpOnly: true,
         sameSite: "strict",
         maxAge: 7 * 24 * 60 * 60 * 1000,
+        secure: true,
       })
       .json({
         user: {
@@ -93,6 +98,7 @@ const login = async (req, res) => {
           clubs,
         },
         token: accessToken,
+        refreshToken, // opcional, para frontend
       });
   } catch (err) {
     console.error("❌ LOGIN ERROR:", err);
@@ -107,7 +113,11 @@ const refreshToken = async (req, res) => {
     if (!token) return res.status(401).json({ message: "No refresh token" });
 
     const decoded = verifyRefreshToken(token);
-    const userSnap = await db.collection("usuarios").where("email", "==", decoded.email).limit(1).get();
+    const userSnap = await db
+      .collection("usuarios")
+      .where("email", "==", decoded.email)
+      .limit(1)
+      .get();
 
     if (userSnap.empty) return res.status(401).json({ message: "Usuario no válido" });
 
@@ -117,12 +127,8 @@ const refreshToken = async (req, res) => {
     if (userData.status !== "ACTIVO") return res.status(403).json({ message: "Usuario no activo" });
 
     const clubs = userData.clubs || [];
-
     const rolesRaw = userData.roles || [];
-    const roles = Array.isArray(rolesRaw)
-      ? rolesRaw
-      : Object.values(rolesRaw || {});
-    const clubId = roles.includes("admin_club") ? userData.clubId : null;
+    const roles = Array.isArray(rolesRaw) ? rolesRaw : Object.values(rolesRaw || {});
 
     const newAccessToken = generateAccessToken({
       id: userDoc.id,
@@ -138,7 +144,7 @@ const refreshToken = async (req, res) => {
   }
 };
 
-// Activar cuenta (completar perfil y password)
+// ACTIVAR CUENTA (completar perfil y password)
 const activateAccount = async (req, res) => {
   try {
     const { email, password, token, profileData } = req.body;
@@ -148,7 +154,12 @@ const activateAccount = async (req, res) => {
     }
 
     // Buscamos usuario
-    const userSnap = await db.collection("usuarios").where("email", "==", email).limit(1).get();
+    const userSnap = await db
+      .collection("usuarios")
+      .where("email", "==", email)
+      .limit(1)
+      .get();
+
     if (userSnap.empty) return res.status(404).json({ message: "Usuario no encontrado" });
 
     const userDoc = userSnap.docs[0];
@@ -158,31 +169,32 @@ const activateAccount = async (req, res) => {
       return res.status(400).json({ message: "Token inválido" });
     }
 
-    // Hash password y actualizamos Firebase Auth
-    await createAuthUserIfNotExists(email, password); // Si no existe en Firebase Auth lo crea
+    // Crear usuario en Firebase Auth si no existe
+    await createAuthUserIfNotExists(email, password);
 
     // Actualizamos usuario en Firestore
     const newRoles = { ...userData.roles };
-
-    // Si es profesor o jugador, agregamos campos del perfil
     if (profileData) {
       if (newRoles.profesor) {
         newRoles.profesor.perfil = profileData;
       } else if (newRoles.jugador) {
-        newRoles.jugador.forEach(j => j.perfil = profileData);
+        newRoles.jugador.forEach((j) => (j.perfil = profileData));
       }
     }
 
     await userDoc.ref.update({
-      status: "PENDIENTE",  // PENDIENTE hasta que lo apruebe quien corresponda
+      status: "PENDIENTE",
       roles: newRoles,
       updatedAt: new Date(),
     });
 
-    const rolesArray = userData.roles || [];
-    
-
-    res.json({ success: true, message: "Perfil activado, pendiente de aprobación", roles: rolesArray, userId: userDoc.id, clubId: userData.clubId || null });
+    res.json({
+      success: true,
+      message: "Perfil activado, pendiente de aprobación",
+      roles: userData.roles || [],
+      userId: userDoc.id,
+      clubId: userData.clubId || null,
+    });
   } catch (err) {
     console.error("❌ ERROR activateAccount:", err);
     res.status(500).json({ message: err.message });
