@@ -153,14 +153,16 @@ const activateAccount = async (req, res) => {
       return res.status(400).json({ message: "Faltan datos obligatorios" });
     }
 
-    // Buscamos usuario
+    // Buscar usuario
     const userSnap = await db
       .collection("usuarios")
       .where("email", "==", email)
       .limit(1)
       .get();
 
-    if (userSnap.empty) return res.status(404).json({ message: "Usuario no encontrado" });
+    if (userSnap.empty) {
+      return res.status(404).json({ message: "Usuario no encontrado" });
+    }
 
     const userDoc = userSnap.docs[0];
     const userData = userDoc.data();
@@ -169,32 +171,40 @@ const activateAccount = async (req, res) => {
       return res.status(400).json({ message: "Token inválido" });
     }
 
-    // Crear usuario en Firebase Auth si no existe
+    // Crear usuario en Auth si no existe
     await createAuthUserIfNotExists(email, password);
 
-    // Actualizamos usuario en Firestore
-    const newRoles = { ...userData.roles };
-    if (profileData) {
-      if (newRoles.profesor) {
-        newRoles.profesor.perfil = profileData;
-      } else if (newRoles.jugador) {
-        newRoles.jugador.forEach((j) => (j.perfil = profileData));
-      }
+    // 🔥 NORMALIZAR ROLES (SIEMPRE ARRAY)
+    let roles = [];
+
+    if (Array.isArray(userData.roles)) {
+      roles = [...userData.roles];
+    } else if (userData.roles && typeof userData.roles === "object") {
+      roles = Object.values(userData.roles);
     }
 
+    // 🔥 OPCIONAL: si en algún momento querés mutar roles
+    // ejemplo: agregar un rol si no existe
+    // if (!roles.includes("jugador")) {
+    //   roles.push("jugador");
+    // }
+
+    // 🔥 ACTUALIZAR USUARIO
     await userDoc.ref.update({
       status: "PENDIENTE",
-      roles: newRoles,
+      roles, // 👈 SIEMPRE array
       updatedAt: new Date(),
     });
 
+    // 🔥 RESPUESTA LIMPIA
     res.json({
       success: true,
       message: "Perfil activado, pendiente de aprobación",
-      roles: userData.roles || [],
+      roles,
       userId: userDoc.id,
-      clubId: userData.clubId || null,
+      clubId: userData.clubs?.[0]?.clubId || userData.clubId || null,
     });
+
   } catch (err) {
     console.error("❌ ERROR activateAccount:", err);
     res.status(500).json({ message: err.message });

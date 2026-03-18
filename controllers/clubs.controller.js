@@ -9,17 +9,12 @@ const generateActivationToken = () =>
 // CREAMOS CLUB CON ADMIN
 const createClubWithAdmin = async (req, res) => {
   try {
-
     const { clubName, city, adminEmail } = req.body;
-
-    console.log(req.body)
-
 
     if (!clubName || !adminEmail || !city) {
       return res.status(400).json({ message: "Faltan datos" });
     }
 
-    // CHEQUEO USUARIO EXISTENTE
     const existingUser = await db
       .collection("usuarios")
       .where("email", "==", adminEmail)
@@ -29,17 +24,16 @@ const createClubWithAdmin = async (req, res) => {
       return res.status(400).json({ message: "El usuario ya existe" });
     }
 
-    // GENERAMOS TOKEN DE ACTIVACIÓN
     const activationToken = generateActivationToken();
 
-    // CREACIÓN CLUB Y USUARIO ADMIN EN UNA TRANSACCIÓN
-    await db.runTransaction(async (tx) => {
-      const clubRef = db.collection("clubes").doc();
-      const userRef = db.collection("usuarios").doc();
+    // 🔥 DEFINIR AFUERA
+    const clubRef = db.collection("clubes").doc();
+    const userRef = db.collection("usuarios").doc();
 
+    await db.runTransaction(async (tx) => {
       tx.set(clubRef, {
         nombre: clubName,
-        ciudad: city || "",
+        ciudad: city,
         email: adminEmail,
         status: "INCOMPLETO",
         createdBy: req.user.email,
@@ -60,10 +54,16 @@ const createClubWithAdmin = async (req, res) => {
       });
     });
 
-    // GUARDAMOS USUARIO Y ENVIAMOS MAIL DE ACTIVACIÓN
-    await sendActivationEmail(adminEmail, activationToken, adminEmail);
+    // ✅ ahora sí existe
+    await sendActivationEmail(
+      adminEmail,
+      activationToken,
+      adminEmail,
+      clubRef.id
+    );
 
-    res.json({ success: true, message: "Club y admin creados correctamente" });
+    res.json({ success: true, message: "Club creado correctamente" });
+
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -470,6 +470,34 @@ const completeClubProfile = async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+};
+
+//FUNCION PARA OBTENER DATOS PÚBLICOS DE UN CLUB
+const getClubPublicData = async (req, res) => {
+  try {
+    const { clubId } = req.params;
+
+    if (!clubId) {
+      return res.status(400).json({ message: "Falta clubId" });
+    }
+
+    const clubDoc = await db.collection("clubes").doc(clubId).get();
+
+    if (!clubDoc.exists) {
+      return res.status(404).json({ message: "Club no encontrado" });
+    }
+
+    const data = clubDoc.data();
+
+    return res.json({
+      nombre: data.nombre || "",
+      ciudad: data.ciudad || "",
+    });
+
+  } catch (error) {
+    console.error("Error getClubPublicData:", error);
+    res.status(500).json({ message: "Error interno del servidor" });
   }
 };
 
@@ -1031,6 +1059,7 @@ module.exports = {
   getClubById, 
   updateClub, 
   completeClubProfile, 
+  getClubPublicData,
   getMyClubProfile, 
   updateMyClub, 
   validateRoleInClub, 
