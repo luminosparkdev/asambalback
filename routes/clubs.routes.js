@@ -14,6 +14,7 @@ const {
   getClubById,
   updateClub,
   completeClubProfile,
+  getClubPublicData,
   getMyClubProfile,
   updateMyClub,
   getPlayersByClub,
@@ -105,6 +106,10 @@ router.post("/:clubId/complete-profile",
   completeClubProfile
 );
 
+//Obetenr club por ID con ruta publica
+router.get("/public/:clubId", getClubPublicData);
+
+
 // Perfil propio
 router.get("/me", authMiddleware, requireRole("admin_club"), getMyClubProfile);
 router.put("/me", authMiddleware, requireRole("admin_club"), updateMyClub);
@@ -142,6 +147,9 @@ router.get("/", authMiddleware, requireRole("admin_asambal"), getClubs);
 
 // Obtener club por ID (admin_asambal o admin_club)
 router.get("/:id", authMiddleware, requireRole("admin_asambal", "admin_club"), getClubById);
+
+//Obetenr club por ID con ruta publica
+router.get("/public/:clubId", getClubPublicData);
 
 // Actualizar club (solo admin_asambal)
 router.put("/:id", authMiddleware, requireRole("admin_asambal"), updateClub);

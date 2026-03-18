@@ -10,8 +10,12 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const sendActivationEmail = async (to, token, email) => {
-  const link = `${process.env.FRONT_URL}/activar-cuenta?email=${encodeURIComponent(email)}&token=${token}`;
+const sendActivationEmail = async (to, token, email, clubId = null) => {
+  let link = `${process.env.FRONT_URL}/activar-cuenta?email=${encodeURIComponent(email)}&token=${token}`;
+
+  if (clubId) {
+    link += `&clubId=${clubId}`;
+  }
 
   const info = await transporter.sendMail({
     from: `"ASAMBAL" <${process.env.EMAIL_USER}>`,
