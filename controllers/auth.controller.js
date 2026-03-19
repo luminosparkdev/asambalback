@@ -32,7 +32,6 @@ const login = async (req, res) => {
       );
       fbLoginResponse = response.data;
     } catch (err) {
-      // Devuelve error real de Firebase
       const errMsg = err.response?.data?.error?.message;
       if (errMsg === "EMAIL_NOT_FOUND") {
         return res.status(400).json({ message: "Usuario no encontrado" });
@@ -61,9 +60,7 @@ const login = async (req, res) => {
     const userData = userDoc.data();
 
     if (userData.status !== "ACTIVO") {
-      return res.status(403).json({
-        message: "Tu cuenta aún no ha sido validada",
-      });
+      return res.status(403).json({ message: "Tu cuenta aún no ha sido validada" });
     }
 
     const roles = Array.isArray(userData.roles)
@@ -82,11 +79,11 @@ const login = async (req, res) => {
 
     const refreshToken = generateRefreshToken({ email: userData.email });
 
-    // 5️⃣ Response
+    // 5️⃣ Response: solo la cookie contiene refreshToken
     return res
       .cookie("refreshToken", refreshToken, {
         httpOnly: true,
-        sameSite: "strict",
+        sameSite: "none",
         maxAge: 7 * 24 * 60 * 60 * 1000,
         secure: true,
       })
@@ -98,7 +95,6 @@ const login = async (req, res) => {
           clubs,
         },
         token: accessToken,
-        refreshToken, // opcional, para frontend
       });
   } catch (err) {
     console.error("❌ LOGIN ERROR:", err);
@@ -144,7 +140,7 @@ const refreshToken = async (req, res) => {
   }
 };
 
-// ACTIVAR CUENTA (completar perfil y password)
+// ACTIVAR CUENTA
 const activateAccount = async (req, res) => {
   try {
     const { email, password, token, profileData } = req.body;
@@ -153,7 +149,6 @@ const activateAccount = async (req, res) => {
       return res.status(400).json({ message: "Faltan datos obligatorios" });
     }
 
-    // Buscar usuario
     const userSnap = await db
       .collection("usuarios")
       .where("email", "==", email)
@@ -171,32 +166,21 @@ const activateAccount = async (req, res) => {
       return res.status(400).json({ message: "Token inválido" });
     }
 
-    // Crear usuario en Auth si no existe
     await createAuthUserIfNotExists(email, password);
 
-    // 🔥 NORMALIZAR ROLES (SIEMPRE ARRAY)
     let roles = [];
-
     if (Array.isArray(userData.roles)) {
       roles = [...userData.roles];
     } else if (userData.roles && typeof userData.roles === "object") {
       roles = Object.values(userData.roles);
     }
 
-    // 🔥 OPCIONAL: si en algún momento querés mutar roles
-    // ejemplo: agregar un rol si no existe
-    // if (!roles.includes("jugador")) {
-    //   roles.push("jugador");
-    // }
-
-    // 🔥 ACTUALIZAR USUARIO
     await userDoc.ref.update({
       status: "PENDIENTE",
-      roles, // 👈 SIEMPRE array
+      roles,
       updatedAt: new Date(),
     });
 
-    // 🔥 RESPUESTA LIMPIA
     res.json({
       success: true,
       message: "Perfil activado, pendiente de aprobación",
@@ -204,7 +188,6 @@ const activateAccount = async (req, res) => {
       userId: userDoc.id,
       clubId: userData.clubs?.[0]?.clubId || userData.clubId || null,
     });
-
   } catch (err) {
     console.error("❌ ERROR activateAccount:", err);
     res.status(500).json({ message: err.message });
