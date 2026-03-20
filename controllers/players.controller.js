@@ -235,6 +235,7 @@ const getPlayerById = async (req, res) => {
 const updatePlayer = async (req, res) => {
   try {
     const { id } = req.params;
+
     const docRef = db.collection("jugadores").doc(id);
     const snap = await docRef.get();
 
@@ -244,18 +245,43 @@ const updatePlayer = async (req, res) => {
 
     const docData = snap.data();
 
+    const {
+      categoriaPrincipal,
+      categorias,
+      coachId,
+      clubId, // 🔥 IMPORTANTE: lo manda el front
+    } = req.body;
+
+    // 🔥 SOLO si vienen categorias las procesamos
+    const categoriasSecundarias = Array.isArray(categorias)
+      ? categorias.filter((c) => c !== categoriaPrincipal)
+      : undefined;
+
+    // 🔥 actualizar SOLO el club activo
+    const updatedClubs = (docData.clubs || []).map((club) => {
+      if (club.clubId !== clubId) return club;
+
+      return {
+        ...club,
+        categoriaPrincipal:
+          categoriaPrincipal ?? club.categoriaPrincipal,
+        categoriasSecundarias:
+          categoriasSecundarias ?? club.categoriasSecundarias,
+        updatedAt: new Date(),
+      };
+    });
+
     await docRef.update({
       nombre: req.body.nombre ?? docData.nombre,
       apellido: req.body.apellido ?? docData.apellido,
       sexo: req.body.sexo ?? docData.sexo,
-      fechanacimiento: req.body.fechaNacimiento ?? docData.fechaNacimiento,
+      fechanacimiento: req.body.fechaNacimiento ?? docData.fechanacimiento,
       edad: req.body.edad ?? docData.edad,
       dni: req.body.dni ?? docData.dni,
       email: req.body.email ?? docData.email,
       telefono: req.body.telefono ?? docData.telefono,
       domicilio: req.body.domicilio ?? docData.domicilio,
       domiciliocobro: req.body.domiciliocobro ?? docData.domiciliocobro,
-      categoria: req.body.categoria ?? docData.categoria,
       nivel: req.body.nivel ?? docData.nivel,
       peso: req.body.peso ?? docData.peso,
       estatura: req.body.estatura ?? docData.estatura,
@@ -266,10 +292,16 @@ const updatePlayer = async (req, res) => {
       usoimagen: req.body.usoimagen ?? docData.usoimagen,
       horariocobro: req.body.horariocobro ?? docData.horariocobro,
       año: req.body.año ?? docData.año,
+
+      coachId: coachId ?? docData.coachId,
+
+      clubs: updatedClubs,
+
       updatedAt: new Date(),
     });
 
     res.json({ message: "Jugador modificado exitosamente" });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: err.message });
