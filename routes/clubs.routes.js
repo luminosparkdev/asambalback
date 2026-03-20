@@ -17,7 +17,9 @@ const {
   getClubPublicData,
   getMyClubProfile,
   updateMyClub,
+  updateCategoriaProfesor,
   getPlayersByClub,
+  getProfesorByIdClub,
   createOrTransferPlayer,
   getTicketsMembresias,
   payTicketMembresia,
@@ -66,6 +68,21 @@ router.get(
   authMiddleware,
   requireRole("admin_club"),
   getPendingPlayers
+);
+
+
+router.get(
+  "/coaches/:id",
+  authMiddleware,
+  requireRole("admin_club"),
+  getProfesorByIdClub
+);
+
+router.put(
+  "/coaches/:id",
+  authMiddleware,
+  requireRole("admin_club"),
+  updateCategoriaProfesor
 );
 
 //Validar jugador club

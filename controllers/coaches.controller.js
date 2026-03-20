@@ -449,6 +449,9 @@ const getProfesorById = async (req, res) => {
     }
 
     const data = doc.data();
+    console.log("USER CLUB ID:", req.user.clubId);
+    console.log("RESOLVED CLUB ID:", req.clubId);
+    console.log("PROF CLUBS:", data.clubs);
     const club = data.clubs?.find(c => c.clubId === clubId);
 
     if (!club) {
@@ -527,7 +530,7 @@ const updateProfesor = async (req, res) => {
 const toggleProfesorStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const clubId = req.user.clubId;
+    const clubId = req.user.clubs?.[0]?.clubId;
 
     const coachRef = db.collection("profesores").doc(id);
 

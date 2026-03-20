@@ -273,25 +273,25 @@ const createOrTransferPlayer = async (req, res) => {
 };
 
 //NORMALIZAMOS FECHAS
-const normalizeDate = (value) => {
-  if (!value) return null;
+  const normalizeDate = (value) => {
+    if (!value) return null;
 
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
 
-  // Timestamp de Firestore
-  if (typeof value.toDate === "function") {
-    return value.toDate().toISOString();
-  }
+    // Timestamp de Firestore
+    if (typeof value.toDate === "function") {
+      return value.toDate().toISOString();
+    }
 
-  // Objeto crudo {_seconds}
-  if (value._seconds) {
-    return new Date(value._seconds * 1000).toISOString();
-  }
+    // Objeto crudo {_seconds}
+    if (value._seconds) {
+      return new Date(value._seconds * 1000).toISOString();
+    }
 
-  return null;
-};
+    return null;
+  };
 
 // OBTENEMOS CLUBES
 const getClubs = async (req, res) => {
@@ -795,6 +795,42 @@ const getPlayersByClub = async (req, res) => {
   }
 };
 
+const getProfesorByIdClub = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const clubId = req.user.clubs?.[0]?.clubId;
+    const doc = await db.collection("profesores").doc(id).get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Profesor no encontrado" });
+    }
+
+    const data = doc.data();
+    const club = data.clubs?.find(c => c.clubId === clubId);
+
+    if (!club) {
+      return res.status(403).json({ message: "Acceso denegado" });
+    }
+
+    res.json({
+      id: doc.id,
+      nombre: data.nombre,
+      apellido: data.apellido,
+      email: data.email,
+      telefono: data.telefono,
+      domicilio: data.domicilio,
+      enea: data.enea,
+      dni: data.dni,
+      status: club.status,
+      categorias: club.categorias,
+      createdAt: normalizeDate(data.createdAt),
+      updatedAt: normalizeDate(data.updatedAt),
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
 const getTicketsMembresias = async (req, res) => {
   try {
     const activeClub = req.user.clubs?.[0];
@@ -1050,10 +1086,59 @@ const validatePlayer = async (req, res) => {
   }
 };
 
+const updateCategoriaProfesor = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { categorias } = req.body;
+
+    const clubId = req.user.clubs?.[0]?.clubId;
+
+    if (!clubId) {
+      return res.status(400).json({ message: "Club no definido" });
+    }
+
+    if (!Array.isArray(categorias)) {
+      return res.status(400).json({ message: "Categorías inválidas" });
+    }
+
+    const ref = db.collection("profesores").doc(id);
+    const doc = await ref.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Profesor no encontrado" });
+    }
+
+    const data = doc.data();
+
+    const updatedClubs = data.clubs.map((club) => {
+      if (club.clubId === clubId) {
+        return {
+          ...club,
+          categorias,
+          updatedAt: new Date()
+        };
+      }
+      return club;
+    });
+
+    await ref.update({
+      clubs: updatedClubs,
+      updatedAt: new Date()
+    });
+
+    res.json({ message: "Categorías actualizadas correctamente" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error al actualizar categorías" });
+  }
+};
+
 
 
 module.exports = { 
   createClubWithAdmin, 
+  updateCategoriaProfesor,
   createOrTransferPlayer, 
   getClubs, toggleClubStatus, 
   getClubById, 
@@ -1066,7 +1151,8 @@ module.exports = {
   getPendingPlayers,
   validatePlayer,
   getPendingCoach, 
-  getPlayersByClub, 
+  getPlayersByClub,
+  getProfesorByIdClub, 
   getTicketsMembresias, 
   payTicketMembresia,
   notificarPagoMembresia

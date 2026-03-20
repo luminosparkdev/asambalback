@@ -3,7 +3,9 @@ function requireRole(...allowedRoles) {
     const userRoles = req.user?.roles || [];
     const hasRole = allowedRoles.some(role => userRoles.includes(role));
 
-    console.log("ROLES EN TOKEN:", userRoles);
+    console.log("USER COMPLETO:", req.user);
+    console.log("ROLES:", userRoles);
+    console.log("ALLOWED:", allowedRoles);
 
     if (!hasRole) {
       return res.status(403).json({ message: "Acceso denegado, rol insuficiente" });
