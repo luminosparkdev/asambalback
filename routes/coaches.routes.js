@@ -118,7 +118,7 @@ router.get(
   "/:id",
   authMiddleware,
   resolveActiveClub,
-  requireRole("admin_club", "profesor"),
+  requireRole("profesor"),
   getProfesorById
 );
 
@@ -136,7 +136,6 @@ router.put(
 router.patch(
   "/:id/toggle",
   authMiddleware,
-  resolveActiveClub,
   requireRole("admin_club"),
   toggleProfesorStatus
 );
