@@ -773,24 +773,195 @@ const getPendingPlayers = async (req, res) => {
 
 const getPlayersByClub = async (req, res) => {
   try {
-    // Club que administra el admin (solo 1)
     const clubId = req.user.clubs?.[0]?.clubId;
-    console.log("Admin Club ID:", clubId);
+
     if (!clubId) {
       return res.status(403).json({ message: "No tiene clubes asignados" });
     }
-    
-    const snapshot = await db.collection("jugadores").where("clubId", "==", clubId).get();
-    console.log("Documentos encontrados:", snapshot.size);
-    const players = snapshot.docs.map(doc => ({ 
-      id: doc.id, 
-      ...doc.data(),
-      createdAt: normalizeDate(doc.data().createdAt),
-      updatedAt: normalizeDate(doc.data().updatedAt),
-    }));
+
+    const snapshot = await db.collection("jugadores").get();
+
+    const players = snapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: normalizeDate(doc.data().createdAt),
+        updatedAt: normalizeDate(doc.data().updatedAt),
+      }))
+      .filter(player =>
+        player.clubs?.some(c => c.clubId === clubId)
+      );
+
+    console.log("Players filtrados:", players.length);
+
     res.json(players);
   } catch (err) {
     console.error("❌ ERROR getPlayersByClub:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const updatePlayerByClub = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    const clubId = req.user.clubs?.[0]?.clubId;
+
+    if (!clubId) {
+      return res.status(403).json({ message: "No tiene clubes asignados" });
+    }
+
+    const ref = db.collection("jugadores").doc(id);
+    const doc = await ref.get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Jugador no encontrado" });
+    }
+
+    const data = doc.data();
+
+    // 🔥 Buscar club dentro del jugador
+    const clubIndex = data.clubs?.findIndex(c => c.clubId === clubId);
+
+    if (clubIndex === -1) {
+      return res.status(403).json({ message: "Acceso denegado" });
+    }
+
+    // =========================
+    // 🔹 CAMPOS GLOBALES
+    // =========================
+    const allowedFields = [
+      "nombre",
+      "apellido",
+      "dni",
+      "fechanacimiento",
+      "edad",
+      "sexo",
+      "domicilio",
+      "email",
+      "telefono",
+      "instagram",
+      "estatura",
+      "peso",
+      "escuela",
+      "nivel",
+      "turno",
+      "año",
+      "domiciliocobro",
+      "horariocobro",
+      "manohabil",
+      "posicion",
+      "usoimagen",
+      "reglasclub",
+      "isAuthorized"
+    ];
+
+    const globalUpdates = {};
+
+    for (const key of allowedFields) {
+      if (updates[key] !== undefined) {
+        globalUpdates[key] = updates[key];
+      }
+    }
+
+    // =========================
+    // 🔹 CAMPOS DEL CLUB
+    // =========================
+
+    const clubUpdates = {
+      ...data.clubs[clubIndex],
+      updatedAt: new Date()
+    };
+
+    if (updates.status) clubUpdates.status = updates.status;
+    if (updates.categoriaPrincipal) clubUpdates.categoriaPrincipal = updates.categoriaPrincipal;
+    if (updates.categoriasSecundarias) clubUpdates.categoriasSecundarias = updates.categoriasSecundarias;
+
+    // Reemplazar el club modificado
+    const updatedClubs = [...data.clubs];
+    updatedClubs[clubIndex] = clubUpdates;
+
+    // =========================
+    // 🔥 UPDATE FINAL
+    // =========================
+
+    await ref.update({
+      ...globalUpdates,
+      clubs: updatedClubs,
+      updatedAt: new Date()
+    });
+
+    res.json({ message: "Jugador actualizado correctamente" });
+
+  } catch (err) {
+    console.error("❌ ERROR updatePlayerByClub:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const getPlayersByIdClub = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const clubId = req.user.clubs?.[0]?.clubId;
+
+    if (!clubId) {
+      return res.status(403).json({ message: "No tiene clubes asignados" });
+    }
+
+    const doc = await db.collection("jugadores").doc(id).get();
+
+    if (!doc.exists) {
+      return res.status(404).json({ message: "Jugador no encontrado" });
+    }
+
+    const data = doc.data();
+
+    // 🔥 Buscar el club dentro del jugador
+    const club = data.clubs?.find(c => c.clubId === clubId);
+
+    if (!club) {
+      return res.status(403).json({ message: "Acceso denegado" });
+    }
+
+    res.json({
+      id: doc.id,
+      nombre: data.nombre,
+      apellido: data.apellido,
+      dni: data.dni,
+      fechanacimiento: data.fechanacimiento,
+      edad: data.edad,
+      sexo: data.sexo,
+      domicilio: data.domicilio,
+      email: data.email,
+      telefono: data.telefono,
+      instagram: data.instagram,
+      estatura: data.estatura,
+      peso: data.peso,
+      escuela: data.escuela,
+      nivel: data.nivel,
+      turno: data.turno,
+      año: data.año,
+      domiciliocobro: data.domiciliocobro,
+      horariocobro: data.horariocobro,
+      manohabil: data.manohabil,
+      posicion: data.posicion,
+      usoimagen: data.usoimagen ?? false,
+      autorizacion: data.isAuthorized ?? false,
+      reglasclub: data.reglasclub ?? false,
+
+      // 🔥 DATOS DEL CLUB (clave)
+      categoriaPrincipal: club.categoriaPrincipal,
+      categoriasSecundarias: club.categoriasSecundarias || [],
+      status: club.status,
+      nombreClub: club.nombreClub,
+
+      createdAt: normalizeDate(data.createdAt),
+      updatedAt: normalizeDate(data.updatedAt),
+    });
+
+  } catch (err) {
+    console.error("❌ ERROR getPlayerByIdClub:", err);
     res.status(500).json({ message: err.message });
   }
 };
@@ -1152,8 +1323,10 @@ module.exports = {
   validatePlayer,
   getPendingCoach, 
   getPlayersByClub,
+  getPlayersByIdClub,
   getProfesorByIdClub, 
   getTicketsMembresias, 
   payTicketMembresia,
-  notificarPagoMembresia
+  notificarPagoMembresia,
+  updatePlayerByClub
 };

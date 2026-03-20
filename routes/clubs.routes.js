@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+
 const authMiddleware = require("../middlewares/auth.middleware");
 const requireRole = require("../middlewares/requireRole.middleware");
 
@@ -19,15 +20,39 @@ const {
   updateMyClub,
   updateCategoriaProfesor,
   getPlayersByClub,
+  getPlayersByIdClub,
   getProfesorByIdClub,
   createOrTransferPlayer,
   getTicketsMembresias,
   payTicketMembresia,
-  notificarPagoMembresia
+  notificarPagoMembresia,
+  updatePlayerByClub
 } = require("../controllers/clubs.controller");
+
 const { sendRequestJoinToCoach } = require("../controllers/coaches.controller");
 
-// --- CREAR JUGADOR DESDE ADMIN CLUB ---
+
+// =======================
+// PLAYERS (ADMIN CLUB)
+// =======================
+
+// Obtener jugador por ID
+router.get(
+  "/players/:id",
+  authMiddleware,
+  requireRole("admin_club"),
+  getPlayersByIdClub
+);
+
+// Listar jugadores del club
+router.get(
+  "/players-by-club",
+  authMiddleware,
+  requireRole("admin_club"),
+  getPlayersByClub
+);
+
+// Crear jugador (flujo nuevo)
 router.post(
   "/create-player",
   authMiddleware,
@@ -35,34 +60,27 @@ router.post(
   createOrTransferPlayer
 );
 
-// -------------------- CREACIÓN DE USUARIOS --------------------
-
-// Crear profesor (admin_club)
-router.post("/create-professor",
-  authMiddleware,
-  requireRole("admin_club"),
-  (req, res) => {
-    req.body.role = "profesor";
-    createUser(req, res);
-  });
-
-// Enviar solicitud de unirse a un club (jugador)
-router.post("/request-coach",
-  authMiddleware,
-  requireRole("admin_club"),
-  sendRequestJoinToCoach);
-
-// Crear jugador (admin_club)
-router.post("/create-player",
+// Crear jugador (flujo viejo - ojo duplicado)
+router.post(
+  "/create-player",
   authMiddleware,
   requireRole("admin_club"),
   (req, res) => {
     req.body.role = "jugador";
     req.body.clubId = req.user.clubId;
     createUser(req, res);
-  });
+  }
+);
 
-//Obtener jugadores pendientes
+// Validar jugador
+router.patch(
+  "/:id/validate-player",
+  authMiddleware,
+  requireRole("admin_club"),
+  validatePlayer
+);
+
+// Jugadores pendientes
 router.get(
   "/pending-players",
   authMiddleware,
@@ -71,6 +89,11 @@ router.get(
 );
 
 
+// =======================
+// COACHES (ADMIN CLUB)
+// =======================
+
+// Obtener coach por ID
 router.get(
   "/coaches/:id",
   authMiddleware,
@@ -78,6 +101,7 @@ router.get(
   getProfesorByIdClub
 );
 
+// Actualizar categoría de coach
 router.put(
   "/coaches/:id",
   authMiddleware,
@@ -85,9 +109,54 @@ router.put(
   updateCategoriaProfesor
 );
 
-//Validar jugador club
-router.patch("/:id/validate-player", authMiddleware, requireRole("admin_club"), validatePlayer);
-// CATEGORIAS
+//Actualizar jugador
+router.put(
+  "/players/:id",
+  authMiddleware,
+  requireRole("admin_club"),
+  updatePlayerByClub
+);
+
+// Crear profesor
+router.post(
+  "/create-professor",
+  authMiddleware,
+  requireRole("admin_club"),
+  (req, res) => {
+    req.body.role = "profesor";
+    createUser(req, res);
+  }
+);
+
+// Solicitud a coach
+router.post(
+  "/request-coach",
+  authMiddleware,
+  requireRole("admin_club"),
+  sendRequestJoinToCoach
+);
+
+// Coaches pendientes
+router.get(
+  "/pending-coaches",
+  authMiddleware,
+  requireRole("admin_club"),
+  getPendingCoach
+);
+
+// Validar coach
+router.patch(
+  "/:id/validate-coach",
+  authMiddleware,
+  requireRole("admin_club"),
+  validateRoleInClub
+);
+
+
+// =======================
+// CATEGORÍAS
+// =======================
+
 router.get(
   "/my/categories",
   authMiddleware,
@@ -108,32 +177,17 @@ router.get(
   }
 );
 
-// LISTAR TODOS LOS JUGADORES DEL CLUB (admin_club)
+
+// =======================
+// MEMBRESÍAS
+// =======================
+
 router.get(
-  "/players-by-club",
+  "/membresias",
   authMiddleware,
-  //requireRole("admin_club"),
-  getPlayersByClub
+  requireRole("admin_club"),
+  getTicketsMembresias
 );
-
-// -------------------- PERFIL Y COMPLETAR PERFIL --------------------
-
-// Completar perfil club (admin_club)
-router.post("/:clubId/complete-profile",
-  completeClubProfile
-);
-
-//Obetenr club por ID con ruta publica
-router.get("/public/:clubId", getClubPublicData);
-
-
-// Perfil propio
-router.get("/me", authMiddleware, requireRole("admin_club"), getMyClubProfile);
-router.put("/me", authMiddleware, requireRole("admin_club"), updateMyClub);
-
-//MEMBRESIAS
-// Obtener tickets de membresias del club
-router.get("/membresias", authMiddleware, requireRole("admin_club"), getTicketsMembresias);
 
 router.post(
   "/membresias/:ticketMembresiaId/pay",
@@ -149,29 +203,75 @@ router.patch(
   notificarPagoMembresia
 );
 
-// -------------------- SOLICITUDES PENDIENTES --------------------
 
-// Obtener solicitudes pendientes de profesores (admin_club)
-router.get("/pending-coaches", authMiddleware, requireRole("admin_club"), getPendingCoach);
+// =======================
+// PERFIL CLUB
+// =======================
 
-// Aprobar o rechazar usuario profesor
-router.patch("/:id/validate-coach", authMiddleware, requireRole("admin_club"), validateRoleInClub);
+// Perfil propio
+router.get(
+  "/me",
+  authMiddleware,
+  requireRole("admin_club"),
+  getMyClubProfile
+);
 
-// -------------------- CRUD CLUBES (ADMIN_ASAMBAL) --------------------
+router.put(
+  "/me",
+  authMiddleware,
+  requireRole("admin_club"),
+  updateMyClub
+);
 
-// Listar todos los clubes
-router.get("/", authMiddleware, requireRole("admin_asambal"), getClubs);
+// Completar perfil
+router.post(
+  "/:clubId/complete-profile",
+  completeClubProfile
+);
 
-// Obtener club por ID (admin_asambal o admin_club)
-router.get("/:id", authMiddleware, requireRole("admin_asambal", "admin_club"), getClubById);
 
-//Obetenr club por ID con ruta publica
+// =======================
+// PÚBLICO
+// =======================
+
 router.get("/public/:clubId", getClubPublicData);
 
-// Actualizar club (solo admin_asambal)
-router.put("/:id", authMiddleware, requireRole("admin_asambal"), updateClub);
 
-// Cambiar estado ACTIVO/INACTIVO (solo admin_asambal)
-router.patch("/:id/toggle", authMiddleware, requireRole("admin_asambal"), toggleClubStatus);
+// =======================
+// ADMIN ASAMBAL
+// =======================
+
+// Listar clubes
+router.get(
+  "/",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getClubs
+);
+
+// Obtener club por ID
+router.get(
+  "/:id",
+  authMiddleware,
+  requireRole("admin_asambal", "admin_club"),
+  getClubById
+);
+
+// Actualizar club
+router.put(
+  "/:id",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  updateClub
+);
+
+// Toggle estado club
+router.patch(
+  "/:id/toggle",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  toggleClubStatus
+);
+
 
 module.exports = router;
