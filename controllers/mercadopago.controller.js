@@ -114,7 +114,7 @@ const crearPreferencia = async (req, res) => {
           cuota_numero: cuotaNumero
         },
 
-        notification_url: "https://asambal-api-303270276070.southamerica-east1.run.app//api/webhooks/mercadopago",
+        notification_url: "https://asambal-api-303270276070.southamerica-east1.run.app/api/webhooks/mercadopago",
 
         back_urls: {
           success: "http://asambal.com/pago-exitoso",
@@ -123,7 +123,6 @@ const crearPreferencia = async (req, res) => {
         },
 
         auto_return: "approved",
-
       },
     });
 
@@ -137,6 +136,8 @@ const crearPreferencia = async (req, res) => {
     res.status(500).json({ error: "Error creando preferencia" });
   }
 };
+
+
 
 module.exports = {
   crearPreferencia,
