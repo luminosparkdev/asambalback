@@ -6,7 +6,6 @@ const db = admin.firestore();
 
 const mercadopagoWebhook = async (req, res) => {
   try {
-
     const { type, data } = req.body;
 
     // ignoramos eventos que no sean pagos
@@ -17,7 +16,7 @@ const mercadopagoWebhook = async (req, res) => {
     const payment = new Payment(mpClient);
 
     const paymentInfo = await payment.get({
-      id: data.id
+      id: data.id,
     });
 
     const status = paymentInfo.status;
@@ -25,19 +24,24 @@ const mercadopagoWebhook = async (req, res) => {
     const paymentId = String(paymentInfo.id);
 
     const tipoPago = metadata.tipo_pago;
-    const ticketId = metadata.ticket_id;
-    const userId = metadata.user_id;
+    const ticketId = metadata.ticket_id || null;
+    const userId = metadata.user_id || null;
 
-    console.log("Webhook MP:", paymentId, status, tipoPago);
+    console.log("Webhook MP:", {
+      paymentId,
+      status,
+      tipoPago,
+    });
+
+    // validación fuerte de metadata
+    if (!tipoPago || !userId) {
+      console.log("Metadata incompleta:", paymentId);
+      return res.status(200).send("Metadata inválida");
+    }
 
     // solo procesamos pagos aprobados
     if (status !== "approved") {
       return res.status(200).send("Pago no aprobado aún");
-    }
-
-    if (!tipoPago) {
-      console.log("Pago sin metadata tipoPago:", paymentId);
-      return res.status(200).send("Sin metadata");
     }
 
     if (tipoPago === "empadronamiento") {
@@ -48,22 +52,35 @@ const mercadopagoWebhook = async (req, res) => {
       await procesarSeguro(paymentInfo, userId);
     }
 
+    // 🔥 actualizar intento de pago
+    const intentoSnap = await db
+      .collection("intentosPago")
+      .where("userId", "==", userId)
+      .where("ticketId", "==", ticketId)
+      .where("estado", "==", "iniciado")
+      .limit(1)
+      .get();
+
+    if (!intentoSnap.empty) {
+      await intentoSnap.docs[0].ref.update({
+        estado: "aprobado",
+        paymentId,
+        updatedAt: new Date(),
+      });
+    }
+
     res.status(200).send("ok");
-
   } catch (error) {
-
     console.error("Error webhook MP:", error);
     res.status(500).send("error");
-
   }
 };
 
 module.exports = {
-  mercadopagoWebhook
+  mercadopagoWebhook,
 };
 
 const procesarEmpadronamiento = async (paymentInfo, ticketId) => {
-
   const cuotaNumero = Number(paymentInfo.metadata?.cuota_numero);
   const paymentId = String(paymentInfo.id);
 
@@ -76,7 +93,6 @@ const procesarEmpadronamiento = async (paymentInfo, ticketId) => {
   const pagoRef = db.collection("pagos").doc(paymentId);
 
   await db.runTransaction(async (transaction) => {
-
     const ticketSnap = await transaction.get(ticketRef);
     const pagoSnap = await transaction.get(pagoRef);
 
@@ -84,93 +100,72 @@ const procesarEmpadronamiento = async (paymentInfo, ticketId) => {
       throw new Error("Ticket no encontrado");
     }
 
-    // idempotencia: si el pago ya existe salimos
+    // 🔥 idempotencia
     if (pagoSnap.exists) {
-      console.log("Pago ya procesado:", paymentId);
+      console.log("Webhook duplicado ignorado:", paymentId);
       return;
     }
 
     const ticket = ticketSnap.data();
 
     const cuotasActualizadas = ticket.cuotas.map((cuota) => {
-
       if (Number(cuota.number) === cuotaNumero) {
-
-        // si ya estaba acreditada, no hacemos nada
-        if (cuota.status === "acreditado") {
-          return cuota;
-        }
+        if (cuota.status === "acreditado") return cuota;
 
         return {
           ...cuota,
           status: "acreditado",
-          paymentId
+          paymentId,
         };
       }
 
       return cuota;
-
     });
 
     transaction.update(ticketRef, {
       cuotas: cuotasActualizadas,
-      updatedAt: new Date()
+      updatedAt: new Date(),
     });
 
     transaction.set(pagoRef, {
-
       paymentId,
-
       tipoPago: "empadronamiento",
-
       status: paymentInfo.status,
-
       monto: paymentInfo.transaction_amount,
-
       metodoPago: paymentInfo.payment_method_id,
       tipoMetodo: paymentInfo.payment_type_id,
-
       payerEmail: paymentInfo.payer?.email || null,
-
       fechaCreacionMP: paymentInfo.date_created,
       fechaAprobacionMP: paymentInfo.date_approved,
-
       metadata: paymentInfo.metadata,
-
-      createdAt: new Date()
-
+      createdAt: new Date(),
     });
-
   });
 
   // habilitamos jugador fuera de la transacción
   const ticketSnap = await ticketRef.get();
   const ticket = ticketSnap.data();
 
-  await db
-    .collection("jugadores")
-    .doc(ticket.jugadorId)
-    .update({
-      habilitadoAsambal: true
-    });
-
+  await db.collection("jugadores").doc(ticket.jugadorId).update({
+    habilitadoAsambal: true,
+  });
 };
 
 const procesarSeguro = async (paymentInfo, profesorId) => {
-
   if (!profesorId) return;
+
+  const currentYear = new Date().getFullYear();
 
   const snap = await db
     .collection("seguroProfesores")
     .where("profesorId", "==", profesorId)
-    .where("year", "==", 2026)
+    .where("year", "==", currentYear)
     .limit(1)
     .get();
 
   if (snap.empty) return;
 
   const doc = snap.docs[0];
-
   const data = doc.data();
 
   if (data.status === "activo") {
@@ -181,54 +176,36 @@ const procesarSeguro = async (paymentInfo, profesorId) => {
   await doc.ref.update({
     status: "activo",
     paidAt: new Date(),
-    updatedAt: new Date()
+    updatedAt: new Date(),
   });
 
-  await db
-    .collection("profesores")
-    .doc(profesorId)
-    .update({
-      asegurado: true
-    });
+  await db.collection("profesores").doc(profesorId).update({
+    asegurado: true,
+  });
 
   await registrarPago(paymentInfo, "seguro");
-
 };
 
 const registrarPago = async (paymentInfo, tipoPago) => {
-
   const pagoRef = db.collection("pagos").doc(String(paymentInfo.id));
-
   const pagoSnap = await pagoRef.get();
 
-  // si ya existe, no hacemos nada
   if (pagoSnap.exists) {
     console.log("Pago ya registrado:", paymentInfo.id);
     return;
   }
 
   await pagoRef.set({
-
     paymentId: paymentInfo.id,
-
     tipoPago,
-
     status: paymentInfo.status,
-
     monto: paymentInfo.transaction_amount,
-
     metodoPago: paymentInfo.payment_method_id,
     tipoMetodo: paymentInfo.payment_type_id,
-
-    payerEmail: paymentInfo.payer.email,
-
+    payerEmail: paymentInfo.payer?.email || null,
     fechaCreacionMP: paymentInfo.date_created,
     fechaAprobacionMP: paymentInfo.date_approved,
-
     metadata: paymentInfo.metadata,
-
-    createdAt: new Date()
-
+    createdAt: new Date(),
   });
-
 };

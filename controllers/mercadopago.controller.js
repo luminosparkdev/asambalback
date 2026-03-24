@@ -117,10 +117,12 @@ const crearPreferencia = async (req, res) => {
         notification_url: "https://asambal-api-303270276070.southamerica-east1.run.app//api/webhooks/mercadopago",
 
         back_urls: {
-          success: "http://localhost:5173/pago-exitoso",
-          failure: "http://localhost:5173/pago-fallido",
-          pending: "http://localhost:5173/pago-pendiente",
-        }
+          success: "http://asambal.com/pago-exitoso",
+          failure: "http://asambal.com/pago-fallido",
+          pending: "http://asambal.com/pago-pendiente",
+        },
+
+        auto_return: "approved",
 
       },
     });
