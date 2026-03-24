@@ -2,70 +2,6 @@ const { db } = require("../config/firebase");
 const { createAuthUserIfNotExists } = require("../utils/firebaseAuth");
 const admin = require("firebase-admin");
 
-const seedLosToldos = async (req, res) => {
-  try {
-    // 1️⃣ Verificar si ya existe
-    const existSnap = await db
-      .collection("clubes")
-      .where("nombre", "==", "Los Toldos")
-      .get();
-
-    if (!existSnap.empty) {
-      return res.status(400).json({
-        message: "El club Los Toldos ya existe",
-      });
-    }
-
-    // 2️⃣ Crear club SIN admin ni token
-    const clubRef = db.collection("clubes").doc();
-
-    await clubRef.set({
-      nombre: "Los Toldos",
-      ciudad: "Buenos Aires",
-      status: "ACTIVO",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    // 3️⃣ Crear jugadores random
-    const nombres = ["Juan", "Pedro", "Lucas", "Mateo", "Tomás", "Franco"];
-    const apellidos = ["Gomez", "Perez", "Lopez", "Fernandez", "Martinez"];
-
-    const batch = db.batch();
-
-    for (let i = 0; i < 25; i++) {
-      const jugadorRef = db.collection("jugadores").doc();
-
-      const nombreRandom =
-        nombres[Math.floor(Math.random() * nombres.length)];
-      const apellidoRandom =
-        apellidos[Math.floor(Math.random() * apellidos.length)];
-
-      batch.set(jugadorRef, {
-        nombre: nombreRandom,
-        apellido: apellidoRandom,
-        clubId: clubRef.id,
-        clubNombre: "Los Toldos",
-        becado: false,
-        habilitadoAsambal: true,
-        createdAt: new Date(),
-      });
-    }
-
-    await batch.commit();
-
-    res.status(201).json({
-      message: "Club Los Toldos y 25 jugadores creados correctamente",
-      clubId: clubRef.id,
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      message: "Error al generar seed",
-    });
-  }
-};
-
 //FUNCION PARA SERIALIZAR CAMPOS DE FECHA
 const serializeTimestamps = (data) => {
   const result = {};
@@ -836,7 +772,7 @@ const createEmpadronamiento = async (req, res) => {
   year: Number(year),
   cuotas: cuotasFormatted,
   jugadorId: doc.id,
-  clubId: jugador.clubId, // siempre tiene clubId
+  clubId: jugador.clubs[0].clubId, // siempre tiene clubId
   nombre: jugador.nombre, // AGREGAR nombre
   apellido: jugador.apellido, // AGREGAR apellido
   status: "adeudado",
@@ -1011,7 +947,6 @@ const getAllTicketsEmpadronamiento = async (req, res) => {
   }
 };
 
-//FUNCION PARA PAGAR EMPADRONAMIENTO MASIVO
 // FUNCION PARA PAGAR EMPADRONAMIENTO MASIVO
 const pagarEmpadronamientoMasivo = async (req, res) => {
   try {
@@ -1242,4 +1177,4 @@ module.exports = {
   getAllTicketsEmpadronamiento,
   pagarEmpadronamientoMasivo,
   createEmpadronamientoClub,
-  seedLosToldos,};
+};
