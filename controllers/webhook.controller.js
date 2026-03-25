@@ -49,7 +49,7 @@ const mercadopagoWebhook = async (req, res) => {
     }
 
     if (tipoPago === "seguro") {
-      await procesarSeguro(paymentInfo, userId);
+      await procesarSeguro(paymentInfo, ticketId);
     }
 
     // 🔥 actualizar intento de pago
@@ -151,39 +151,63 @@ const procesarEmpadronamiento = async (paymentInfo, ticketId) => {
   });
 };
 
-const procesarSeguro = async (paymentInfo, profesorId) => {
-  if (!profesorId) return;
+const procesarSeguro = async (paymentInfo, ticketId) => {
+  if (!ticketId) return;
 
-  const currentYear = new Date().getFullYear();
+  const paymentId = String(paymentInfo.id);
 
-  const snap = await db
-    .collection("seguroProfesores")
-    .where("profesorId", "==", profesorId)
-    .where("year", "==", currentYear)
-    .limit(1)
-    .get();
+  const seguroRef = db.collection("seguroProfesores").doc(ticketId);
+  const pagoRef = db.collection("pagos").doc(paymentId);
 
-  if (snap.empty) return;
+  await db.runTransaction(async (transaction) => {
+    const seguroSnap = await transaction.get(seguroRef);
+    const pagoSnap = await transaction.get(pagoRef);
 
-  const doc = snap.docs[0];
-  const data = doc.data();
+    if (!seguroSnap.exists) {
+      throw new Error("Seguro no encontrado");
+    }
 
-  if (data.status === "activo") {
-    console.log("Seguro ya activo:", profesorId);
-    return;
-  }
+    // 🔥 idempotencia (clave)
+    if (pagoSnap.exists) {
+      console.log("Webhook duplicado ignorado:", paymentId);
+      return;
+    }
 
-  await doc.ref.update({
-    status: "activo",
-    paidAt: new Date(),
-    updatedAt: new Date(),
+    const seguro = seguroSnap.data();
+
+    if (seguro.status === "activo") {
+      console.log("Seguro ya activo:", ticketId);
+      return;
+    }
+
+    transaction.update(seguroRef, {
+      status: "activo",
+      paidAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    transaction.set(pagoRef, {
+      paymentId,
+      tipoPago: "seguro",
+      status: paymentInfo.status,
+      monto: paymentInfo.transaction_amount,
+      metodoPago: paymentInfo.payment_method_id,
+      tipoMetodo: paymentInfo.payment_type_id,
+      payerEmail: paymentInfo.payer?.email || null,
+      fechaCreacionMP: paymentInfo.date_created,
+      fechaAprobacionMP: paymentInfo.date_approved,
+      metadata: paymentInfo.metadata,
+      createdAt: new Date(),
+    });
   });
 
-  await db.collection("profesores").doc(profesorId).update({
+  // fuera de la transacción
+  const seguroSnap = await seguroRef.get();
+  const seguro = seguroSnap.data();
+
+  await db.collection("profesores").doc(seguro.profesorId).update({
     asegurado: true,
   });
-
-  await registrarPago(paymentInfo, "seguro");
 };
 
 const registrarPago = async (paymentInfo, tipoPago) => {

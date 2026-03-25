@@ -44,6 +44,8 @@ const sendActivationEmail = async (to, token, email, clubId = null) => {
 
         <div style="text-align:center; margin:32px 0;">
           <a href="${link}"
+             rel="noopener noreferrer"
+             target="_blank"
              style="
                background-color:#22c55e;
                color:#ffffff;
@@ -65,9 +67,9 @@ const sendActivationEmail = async (to, token, email, clubId = null) => {
         <!-- Fallback -->
         <p style="font-size:12px; color:#9ca3af; margin-top:20px;">
           Si el botón no funciona, copiá y pegá este enlace en tu navegador:<br/>
-          <a href="${link}" style="color:#2563eb; word-break:break-all;">
-            ${link}
-          </a>
+          <span style="color:#2563eb; word-break:break-all;">
+          ${link}
+          </span>
         </p>
       </div>
 

@@ -11,22 +11,39 @@ const crearPreferencia = async (req, res) => {
     const { tipo, ticketId, cuotaNumero } = req.body;
 
     let title;
+    let userId;
+    let email;
+    let price;
 
     if (tipo === "empadronamiento") {
       title = "Empadronamiento ASAMBAL";
     }
 
     if (tipo === "seguro") {
-      title = "Seguro anual profesor";
-    }
+  const seguroRef = db.collection("seguroProfesores").doc(ticketId);
+  const seguroSnap = await seguroRef.get();
+
+  if (!seguroSnap.exists) {
+    return res.status(404).json({ error: "Seguro no encontrado" });
+  }
+
+  const seguro = seguroSnap.data();
+
+  userId = seguro.profesorId;
+  price = seguro.amount;
+
+  const userSnap = await db.collection("usuarios").doc(userId).get();
+
+  if (!userSnap.exists) {
+    return res.status(404).json({ error: "Usuario no encontrado" });
+  }
+
+  email = userSnap.data().email;
+}
 
     if (tipo === "membresia") {
       title = "Membresía club";
     }
-
-    let userId;
-    let email;
-    let price;
 
     if (tipo === "empadronamiento") {
 
@@ -117,9 +134,9 @@ const crearPreferencia = async (req, res) => {
         notification_url: "https://asambal-api-303270276070.southamerica-east1.run.app/api/webhooks/mercadopago",
 
         back_urls: {
-          success: "http://asambal.com/pago-exitoso",
-          failure: "http://asambal.com/pago-fallido",
-          pending: "http://asambal.com/pago-pendiente",
+          success: "https://asambal.com/pago-exitoso",
+          failure: "https://asambal.com/pago-fallido",
+          pending: "https://asambal.com/pago-pendiente",
         },
 
         auto_return: "approved",

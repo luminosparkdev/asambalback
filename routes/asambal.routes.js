@@ -37,11 +37,6 @@ const { createClubWithAdmin } = require("../controllers/clubs.controller");
 
 const {getMyTransferRequests} = require("../controllers/players.controller");
 
-router.post(
-  "/dev/seed-los-toldos",
-  seedLosToldos
-);
-
 /*---------------------------------------------------
 ------------------PERFIL ASAMBAL---------------------
 ---------------------------------------------------*/
