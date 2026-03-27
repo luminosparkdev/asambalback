@@ -14,6 +14,7 @@ const categoriesRoutes = require("./routes/categories.routes");
 const mercadopagoRoutes = require("./routes/mercadopago.routes");
 const certificadosRoutes = require("./routes/certificados.routes");
 const webhookRoutes = require("./routes/webhook.routes");
+const fixture = require("./routes/fixture.routes")
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
 
@@ -60,6 +61,7 @@ app.use("/api/players", jugadoresRoutes);
 app.use("/api/categories", categoriesRoutes);
 app.use("/api/pagos", mercadopagoRoutes);
 app.use("/api/webhooks", webhookRoutes);
+app.use("/api/fixture", fixture)
 app.use("/api/certificados", certificadosRoutes);
 
 app.use((err, req, res, next) => {
