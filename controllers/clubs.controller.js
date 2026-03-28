@@ -78,10 +78,9 @@ const createOrTransferPlayer = async (req, res) => {
       email,
       categoriaPrincipal,
       categorias,
-      coachId: frontCoachId, // coachId enviado desde el front
+      coachId: frontCoachId,
     } = req.body;
 
-    // --- Validar que el club del admin esté activo ---
     const club = req.user.clubs?.[0];
 
     if (!club) {
@@ -93,98 +92,206 @@ const createOrTransferPlayer = async (req, res) => {
     const clubId = club.clubId;
     const nombreClub = club.nombre;
 
-    // --- Validaciones básicas ---
     if (!nombre?.trim() || !apellido?.trim() || !email?.trim() || !categoriaPrincipal) {
       return res.status(400).json({
         message: "Faltan datos obligatorios",
       });
     }
 
+    const normalizedEmail = email.toLowerCase().trim();
+
     const categoriasSecundarias = Array.isArray(categorias)
       ? categorias.filter((c) => c !== categoriaPrincipal)
       : [];
 
-    // --- Buscar si el usuario ya existe ---
+    const coachId = frontCoachId || null;
+
+    // 🔥 Helper para crear ticket
+    const createEmpadronamientoTicket = async (jugadorId) => {
+      const empSnap = await db
+        .collection("empadronamientos")
+        .where("status", "==", "activo")
+        .where("type", "==", "jugadores")
+        .limit(1)
+        .get();
+
+      if (empSnap.empty) return;
+
+      const empDoc = empSnap.docs[0];
+      const empData = empDoc.data();
+
+      // evitar duplicados
+      const existingTicket = await db
+        .collection("ticketsEmpadronamiento")
+        .where("jugadorId", "==", jugadorId)
+        .where("clubId", "==", clubId)
+        .where("status", "==", "pendiente")
+        .limit(1)
+        .get();
+
+      if (!existingTicket.empty) return;
+
+      const ticketRef = db.collection("ticketsEmpadronamiento").doc();
+
+      await ticketRef.set({
+        ticketId: ticketRef.id,
+        empadronamientoId: empDoc.id,
+        year: empData.year,
+        jugadorId,
+        clubId,
+        nombre,
+        apellido,
+        amount: empData.amount,
+        status: "pendiente",
+        becado: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await db.collection("jugadores").doc(jugadorId).update({
+        habilitadoAsambal: false,
+      });
+    };
+
+    // --- Buscar usuario ---
     const userSnap = await db
       .collection("usuarios")
-      .where("email", "==", email)
+      .where("email", "==", normalizedEmail)
       .limit(1)
       .get();
 
-    // --- Si el usuario existe ---
+    // --- SI EL USUARIO EXISTE ---
     if (!userSnap.empty) {
       const userDoc = userSnap.docs[0];
-      const jugadorSnap = await db.collection("jugadores").doc(userDoc.id).get();
+      const userData = userDoc.data();
 
-      if (jugadorSnap.exists) {
-        const jugadorData = jugadorSnap.data();
+      const jugadorSnap = await db
+        .collection("jugadores")
+        .doc(userDoc.id)
+        .get();
 
-        // Verificar si ya pertenece al club
-        const clubExistente = jugadorData.clubs.find(
-          (c) => c.clubId === clubId
-        );
+      const now = new Date();
 
-        if (clubExistente) {
-          return res.status(400).json({
-            message: "El jugador ya existe en este club.",
+      // 🟡 CASO 1: Usuario existe pero NO es jugador
+      if (!jugadorSnap.exists) {
+        // agregar rol
+        if (!userData.roles.includes("jugador")) {
+          await userDoc.ref.update({
+            roles: [...userData.roles, "jugador"],
+            updatedAt: now,
           });
         }
 
-        // Verificar solicitud pendiente
-        const existingRequests = await db
-          .collection("transferRequests")
-          .where("jugadorId", "==", userDoc.id)
-          .where("status", "==", "PENDIENTE")
-          .get();
-
-        if (!existingRequests.empty) {
-          return res.status(400).json({
-            message: "Ya existe una solicitud de pase pendiente.",
-          });
-        }
-
-        // Crear solicitud de transferencia
-        await db.collection("transferRequests").add({
-          jugadorId: userDoc.id,
-          clubOrigen:
-            jugadorData.clubs?.find((c) => c.status === "ACTIVO") ||
-            jugadorData.clubs?.[0],
-          clubDestino: { clubId, nombreClub },
-          jugadorNombre: `${jugadorData.nombre} ${jugadorData.apellido}`,
-          categoriaPrincipal,
-          categoriasSecundarias,
-          status: "PENDIENTE",
-          createdAt: new Date(),
+        // crear jugador
+        await db.collection("jugadores").doc(userDoc.id).set({
+          nombre,
+          apellido,
+          email: normalizedEmail,
+          userId: userDoc.id,
+          coachId,
+          status: "INCOMPLETO",
+          habilitadoAsambal: false,
+          becado: false,
+          certificadoMedico: false,
+          createdAt: now,
+          updatedAt: now,
+          clubs: [
+            {
+              clubId,
+              nombreClub,
+              categoriaPrincipal,
+              categoriasSecundarias,
+              status: "INCOMPLETO",
+              updatedAt: now,
+            },
+          ],
         });
+
+        // agregar club al usuario
+        await userDoc.ref.update({
+          clubs: [
+            ...(userData.clubs || []),
+            {
+              clubId,
+              nombreClub,
+              categoriaPrincipal,
+              categoriasSecundarias,
+              status: "INCOMPLETO",
+              updatedAt: now,
+            },
+          ],
+        });
+
+        // 🔥 crear ticket
+        await createEmpadronamientoTicket(userDoc.id);
 
         return res.status(200).json({
-          code: "SOLICITUD_PENDIENTE",
-          message:
-            "El jugador pertenece a otro club. Se ha iniciado la solicitud de pase.",
+          code: "ROL_AGREGADO",
+          message: "El usuario ya existía. Se agregó como jugador.",
         });
       }
+
+      // 🔵 CASO 2: Ya es jugador → transferencia
+      const jugadorData = jugadorSnap.data();
+
+      const clubExistente = jugadorData.clubs.find(
+        (c) => c.clubId === clubId
+      );
+
+      if (clubExistente) {
+        return res.status(400).json({
+          message: "El jugador ya existe en este club.",
+        });
+      }
+
+      const existingRequests = await db
+        .collection("transferRequests")
+        .where("jugadorId", "==", userDoc.id)
+        .where("status", "==", "PENDIENTE")
+        .get();
+
+      if (!existingRequests.empty) {
+        return res.status(400).json({
+          message: "Ya existe una solicitud de pase pendiente.",
+        });
+      }
+
+      await db.collection("transferRequests").add({
+        jugadorId: userDoc.id,
+        clubOrigen:
+          jugadorData.clubs?.find((c) => c.status === "ACTIVO") ||
+          jugadorData.clubs?.[0],
+        clubDestino: { clubId, nombreClub },
+        jugadorNombre: `${jugadorData.nombre} ${jugadorData.apellido}`,
+        categoriaPrincipal,
+        categoriasSecundarias,
+        status: "PENDIENTE",
+        createdAt: new Date(),
+      });
+
+      return res.status(200).json({
+        code: "SOLICITUD_PENDIENTE",
+        message:
+          "El jugador pertenece a otro club. Se ha iniciado la solicitud de pase.",
+      });
     }
 
-    // --- Si el usuario no existe: crear jugador nuevo ---
+    // 🔵 CASO 3: Usuario NO existe
     const activationToken = generateActivationToken();
-
     const userRef = db.collection("usuarios").doc();
     const jugadorRef = db.collection("jugadores").doc(userRef.id);
     const now = new Date();
 
-    // Usar coachId enviado desde el front o null si no llega
-    const coachId = frontCoachId || null;
-
     await db.runTransaction(async (tx) => {
       tx.set(userRef, {
-        email,
+        email: normalizedEmail,
         roles: ["jugador"],
         status: "INCOMPLETO",
         activationToken,
         createdBy: req.user.email,
         createdAt: now,
         updatedAt: now,
-        certificadoMedico: false, // campo agregado
+        certificadoMedico: false,
         clubs: [
           {
             clubId,
@@ -200,13 +307,13 @@ const createOrTransferPlayer = async (req, res) => {
       tx.set(jugadorRef, {
         nombre,
         apellido,
-        email,
+        email: normalizedEmail,
         userId: userRef.id,
-        coachId, // asignado desde front
+        coachId,
         status: "INCOMPLETO",
         habilitadoAsambal: false,
         becado: false,
-        certificadoMedico: false, // campo agregado
+        certificadoMedico: false,
         createdAt: now,
         updatedAt: now,
         clubs: [
@@ -222,48 +329,18 @@ const createOrTransferPlayer = async (req, res) => {
       });
     });
 
-    // --- Crear ticket de empadronamiento si hay empadronamiento activo ---
-    const empSnap = await db
-      .collection("empadronamientos")
-      .where("status", "==", "activo")
-      .where("type", "==", "jugadores")
-      .limit(1)
-      .get();
+    // 🔥 crear ticket
+    await createEmpadronamientoTicket(userRef.id);
 
-    if (!empSnap.empty) {
-      const empDoc = empSnap.docs[0];
-      const empData = empDoc.data();
-
-      const ticketRef = db.collection("ticketsEmpadronamiento").doc();
-
-      await ticketRef.set({
-        ticketId: ticketRef.id,
-        empadronamientoId: empDoc.id,
-        year: empData.year,
-        jugadorId: userRef.id,
-        clubId,
-        nombre,
-        apellido,
-        amount: empData.amount,
-        status: "pendiente",
-        becado: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      await db.collection("jugadores").doc(userRef.id).update({
-        habilitadoAsambal: false,
-      });
-    }
-
-    // --- Enviar mail de activación ---
-    await sendActivationEmail(email, activationToken, email);
+    // enviar mail
+    await sendActivationEmail(normalizedEmail, activationToken, normalizedEmail);
 
     return res.status(200).json({
       code: "JUGADOR_CREADO",
       message: "Jugador creado exitosamente.",
       userId: userRef.id,
     });
+
   } catch (error) {
     console.error("❌ ERROR createOrTransferPlayer:", error);
     return res.status(500).json({
