@@ -1150,8 +1150,40 @@ const createSeguro = async (req, res) => {
   }
 };
 
+const getJugadoresStats = async (req, res) => {
+  try {
+    const jugadoresRef = db.collection("jugadores");
+
+    const [
+      totalSnap,
+      incompletosSnap,
+      pendientesSnap,
+      activosSnap,
+      habilitadosSnap,
+    ] = await Promise.all([
+      jugadoresRef.count().get(),
+      jugadoresRef.where("status", "==", "INCOMPLETO").count().get(),
+      jugadoresRef.where("status", "==", "PENDIENTE").count().get(),
+      jugadoresRef.where("status", "==", "ACTIVO").count().get(),
+      jugadoresRef.where("habilitadoAsambal", "==", true).count().get(),
+    ]);
+
+    res.json({
+      total: totalSnap.data().count,
+      incompletos: incompletosSnap.data().count,
+      pendientes: pendientesSnap.data().count,
+      activos: activosSnap.data().count,
+      habilitados: habilitadosSnap.data().count,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Error obteniendo estadísticas" });
+  }
+};
+
 module.exports = { 
   getPendingUsers, 
+  getJugadoresStats,
   validateUser, 
   getMyAsambalProfile, 
   updateMyAsambalProfile, 

@@ -1,67 +1,115 @@
 const { getStorage } = require("firebase-admin/storage");
 const { getFirestore } = require("firebase-admin/firestore");
 const { v4: uuidv4 } = require("uuid");
-const sharp = require("sharp");
+const { PDFDocument } = require("pdf-lib");
+const admin = require("firebase-admin");
 
 const db = getFirestore();
-const storage = getStorage().bucket();
+const { bucket } = require("../config/firebase");
 
 /*----------------------------------------------------
 ----------- CONTROLADORES JUGADORES ------------------
 ----------------------------------------------------*/
 
 // Subir certificado
+
+const imageToPdf = async (buffer, mime) => {
+  const pdfDoc = await PDFDocument.create();
+
+  let image;
+
+  if (mime === "image/png") {
+    image = await pdfDoc.embedPng(buffer);
+  } else if (mime === "image/jpeg" || mime === "image/jpg") {
+    image = await pdfDoc.embedJpg(buffer);
+  } else {
+    throw new Error("Formato de imagen no soportado para conversión");
+  }
+
+  const page = pdfDoc.addPage([image.width, image.height]);
+
+  page.drawImage(image, {
+    x: 0,
+    y: 0,
+    width: image.width,
+    height: image.height,
+  });
+
+  return await pdfDoc.save();
+};
+
 const uploadCertificado = async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ message: "Archivo requerido" });
+    if (!req.file) {
+      return res.status(400).json({ message: "Archivo requerido" });
+    }
 
     const file = req.file;
     const ext = file.originalname.split(".").pop().toLowerCase();
+    const mime = file.mimetype;
 
-    // Validar solo los tipos permitidos
-    if (!["pdf", "jpg", "jpeg"].includes(ext)) {
-      return res.status(400).json({ message: "Solo se permiten archivos PDF o JPG/JPEG" });
+    // 🚨 IMPORTANTE: validación correcta (AND, no OR)
+    const allowedExt = ["pdf", "jpg", "jpeg", "png"];
+    const allowedMime = [
+      "application/pdf",
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+    ];
+
+    if (!allowedExt.includes(ext) || !allowedMime.includes(mime)) {
+      return res.status(400).json({
+        message: "Formato inválido. Usá PDF, JPG, JPEG o PNG.",
+      });
+    }
+
+    // 🚨 Caso típico iPhone (HEIC disfrazado)
+    if (mime === "image/heic" || ext === "heic") {
+      return res.status(400).json({
+        message:
+          "Las fotos de iPhone no son compatibles. Convertí la imagen a JPG o PNG antes de subirla.",
+      });
     }
 
     const userId = req.user.id;
     const year = new Date().getFullYear();
 
-    // Limitar máximo 2 certificados por año
-    const snapshot = await db.collection("certificados")
+    const snapshot = await db
+      .collection("certificados")
       .where("userId", "==", userId)
       .where("year", "==", year)
       .get();
 
     if (snapshot.size >= 2) {
-      return res.status(400).json({ message: "Máximo 2 certificados por año" });
+      return res.status(400).json({
+        message: "Máximo 2 certificados por año",
+      });
     }
 
-    let uploadBuffer = file.buffer;
-    let finalExt = ext;
-    let contentType = file.mimetype;
+    let uploadBuffer;
+    let contentType = "application/pdf";
 
-    // Convertir JPG/JPEG a WebP
-    if (["jpg", "jpeg"].includes(ext)) {
-      uploadBuffer = await sharp(file.buffer)
-        .webp({ quality: 80 })
-        .toBuffer();
-      finalExt = "webp";
-      contentType = "image/webp";
+    // 👉 IMAGEN → PDF
+    if (mime.startsWith("image/")) {
+      uploadBuffer = await imageToPdf(file.buffer, mime);
+    } 
+    // 👉 PDF → 그대로 (lo dejamos como está)
+    else if (mime === "application/pdf") {
+      uploadBuffer = file.buffer;
     }
 
-    // Guardar el archivo dentro de la carpeta "certificados"
-    const fileName = `certificados/${userId}/${uuidv4()}.${finalExt}`;
-    const fileRef = storage.file(fileName);
+    const fileName = `certificados/${userId}/${uuidv4()}.pdf`;
+    const fileRef = bucket.file(fileName);
 
     await fileRef.save(uploadBuffer, {
       contentType,
       resumable: false,
     });
 
-    const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${storage.name}/o/${encodeURIComponent(fileName)}?alt=media`;
+    const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media`;
 
-    // Guardar metadata en Firestore
     const docRef = db.collection("certificados").doc();
+
     await docRef.set({
       userId,
       fileName,
@@ -72,13 +120,21 @@ const uploadCertificado = async (req, res) => {
     });
 
     res.json({
-      message: "Archivo subido y optimizado con éxito",
-      certificado: { id: docRef.id, url: publicUrl, status: "PENDIENTE", year },
+      message: "Certificado subido correctamente",
+      certificado: {
+        id: docRef.id,
+        url: publicUrl,
+        status: "PENDIENTE",
+        year,
+      },
     });
-
   } catch (err) {
-    console.error("Error al subir el certificado: ", err);
-    res.status(500).json({ message: "Error al subir certificado", error: err.message || err });
+    console.error("Error al subir certificado:", err);
+
+    res.status(500).json({
+      message: "Error al procesar el archivo",
+      error: err.message,
+    });
   }
 };
 

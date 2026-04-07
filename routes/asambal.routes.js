@@ -5,6 +5,7 @@ const requireRole = require("../middlewares/requireRole.middleware");
 
 const {
   getPendingUsers,
+  getJugadoresStats,
   validateUser,
   getMyAsambalProfile,
   updateMyAsambalProfile,
@@ -93,6 +94,13 @@ router.get(
   requireRole("admin_asambal"),
   getAllPlayersAsambal
 );
+
+router.get(
+  "/players/stats",
+  authMiddleware,
+  requireRole("admin_asambal"),
+  getJugadoresStats
+)
 // OBTENER DETALLE DE JUGADOR
 router.get(
   "/players/:id",
