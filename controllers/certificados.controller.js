@@ -302,21 +302,26 @@ const getCertificadoFile = async (req, res) => {
     const { id } = req.params;
 
     const doc = await db.collection("certificados").doc(id).get();
+    console.log("Documento:", doc);
 
     if (!doc.exists) {
       return res.status(404).json({ message: "Certificado no encontrado" });
     }
 
     const data = doc.data();
+    console.log(data);
 
-    const file = storage.file(data.fileName);
+    const file = bucket.file(data.fileName);
+    console.log(file);
 
     const [url] = await file.getSignedUrl({
       action: "read",
       expires: Date.now() + 1000 * 60 * 10 // 10 minutos
     });
+    console.log(url)
 
     res.json({ url });
+    console.log(res);
 
   } catch (err) {
     console.error("Error al generar signed URL:", err);
