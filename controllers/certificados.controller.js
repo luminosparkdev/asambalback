@@ -108,10 +108,44 @@ const uploadCertificado = async (req, res) => {
 
     const publicUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media`;
 
+    // 🔎 Buscar jugador
+const jugadorSnap = await db
+  .collection("jugadores")
+  .where("userId", "==", userId)
+  .limit(1)
+  .get();
+
+if (jugadorSnap.empty) {
+  return res.status(404).json({
+    message: "Jugador no encontrado para este usuario",
+  });
+}
+
+const jugador = jugadorSnap.docs[0].data();
+
+// 🏟️ Obtener club activo
+const clubActivo = jugador.clubs?.find(c => c.status === "ACTIVO");
+
+if (!clubActivo) {
+  return res.status(400).json({
+    message: "El jugador no tiene un club activo",
+  });
+}
+
+const clubId = clubActivo.clubId;
+
+const coachId = jugador.coachId || null;
+const nombre = jugador.nombre || null;
+const apellido = jugador.apellido || null;
+
     const docRef = db.collection("certificados").doc();
 
     await docRef.set({
       userId,
+      clubId,
+      coachId,
+      nombre,
+      apellido,
       fileName,
       url: publicUrl,
       year,
@@ -222,25 +256,51 @@ const deleteCertificado = async (req, res) => {
 // Listar certificados pendientes para revisión
 const getPendingCertificados = async (req, res) => {
   try {
-
     const year = new Date().getFullYear();
+    const { roles, id: userId, clubId } = req.user;
 
-    const snapshot = await db
+    let query = db
       .collection("certificados")
       .where("year", "==", year)
-      .where("status", "==", "PENDIENTE")
-      .get();
+      .where("status", "==", "PENDIENTE");
 
-    const certificados = snapshot.docs.map(doc => ({
+    // 🏟️ Admin de club
+    if (roles.includes("admin_club")) {
+      if (!clubId) {
+        return res.status(400).json({
+          message: "El usuario no tiene clubId asignado",
+        });
+      }
+
+      query = query.where("clubId", "==", clubId);
+    }
+
+    // 🧑‍🏫 Profesor
+    else if (roles.includes("profesor")) {
+      query = query.where("coachId", "==", userId);
+    }
+
+    // 🚫 No autorizado
+    else {
+      return res.status(403).json({
+        message: "No tenés permisos para ver estos certificados",
+      });
+    }
+
+    const snapshot = await query.get();
+
+    const certificados = snapshot.docs.map((doc) => ({
       id: doc.id,
-      ...doc.data()
+      ...doc.data(),
     }));
 
     res.json(certificados);
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Error al obtener certificados pendientes" });
+    res.status(500).json({
+      message: "Error al obtener certificados pendientes",
+    });
   }
 };
 
