@@ -1,8 +1,6 @@
 const { Payment } = require("mercadopago");
 const mpClient = require("../config/mercadopago");
-const admin = require("firebase-admin");
-
-const db = admin.firestore();
+const {admin, db} = require ("../config/firebase")
 
 const mercadopagoWebhook = async (req, res) => {
   try {

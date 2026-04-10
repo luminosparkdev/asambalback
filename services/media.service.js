@@ -1,6 +1,4 @@
-const admin = require("firebase-admin");
-
-const bucket = admin.storage().bucket();
+const { bucket } = require("../config/firebase");
 
 const uploadPublicImage = async ({
   path,

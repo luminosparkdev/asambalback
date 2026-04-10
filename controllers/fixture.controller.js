@@ -1,5 +1,4 @@
-const admin = require("firebase-admin");
-const db = admin.firestore();
+const { admin, db } = require("../config/firebase");
 
 const getFixture = async (req,res) => {
     try{

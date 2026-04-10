@@ -1,4 +1,5 @@
 require("dotenv").config();
+require("./config/firebase");
 const express = require("express");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
@@ -14,7 +15,8 @@ const categoriesRoutes = require("./routes/categories.routes");
 const mercadopagoRoutes = require("./routes/mercadopago.routes");
 const certificadosRoutes = require("./routes/certificados.routes");
 const webhookRoutes = require("./routes/webhook.routes");
-const fixture = require("./routes/fixture.routes")
+const fixture = require("./routes/fixture.routes");
+const cuotasRoutes = require ("./routes/cuotas.routes")
 const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
 
@@ -53,7 +55,7 @@ app.use(cookieParser());
 app.use(limiter);  
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
-app.use("/api/clubs", clubsRoutes);
+app.use("/api/clubs", clubsRoutes, cuotasRoutes);
 app.use("/api/coaches", coachesRoutes);
 app.use("/api/asambal", asambalRoutes);
 app.use("/api/heroclubs", heroclubsRoutes);

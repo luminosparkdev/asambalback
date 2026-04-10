@@ -1,6 +1,6 @@
 const { db } = require("../config/firebase");
 const { createAuthUserIfNotExists } = require("../utils/firebaseAuth");
-const admin = require("firebase-admin");
+const { admin } = require("../config/firebase");
 
 //FUNCION PARA SERIALIZAR CAMPOS DE FECHA
 const serializeTimestamps = (data) => {

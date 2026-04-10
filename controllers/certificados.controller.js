@@ -2,9 +2,8 @@ const { getStorage } = require("firebase-admin/storage");
 const { getFirestore } = require("firebase-admin/firestore");
 const { v4: uuidv4 } = require("uuid");
 const { PDFDocument } = require("pdf-lib");
-const admin = require("firebase-admin");
+const { admin, db } = require("../config/firebase");
 
-const db = getFirestore();
 const { bucket } = require("../config/firebase");
 
 /*----------------------------------------------------

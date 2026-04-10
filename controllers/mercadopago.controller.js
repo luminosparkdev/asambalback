@@ -1,8 +1,6 @@
 const { Preference } = require("mercadopago");
 const mpClient = require("../config/mercadopago");
-const admin = require("firebase-admin");
-
-const db = admin.firestore();
+const {admin, db} = require ("../config/firebase")
 
 const crearPreferencia = async (req, res) => {
   console.log("Endpoint crear-preferencia alcanzado");
