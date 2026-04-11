@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
-const  { crearCuota } = require ("../controllers/cuotas.controller.js");
+const  { crearCuota, getCuotas } = require ("../controllers/cuotas.controller.js");
 
-
-router.post("/cuotas/crear", crearCuota);
+router.get("/", getCuotas);
+router.post("/crear", crearCuota);
 
 module.exports = router;
