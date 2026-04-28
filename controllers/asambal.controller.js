@@ -176,16 +176,53 @@ const validateUser = async (req, res) => {
 //FUNCION PARA CONSULTAR TODOS LOS JUGADORES
 const getAllPlayersAsambal = async (req, res) => {
   try {
-    const snapshot = await db.collection("jugadores").get();
+    // 🔹 1. jugadores
+    const playersSnap = await db.collection("jugadores").get();
 
-    const players = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...serializeTimestamps(doc.data()),
-    }));
+    // 🔹 2. pagos relevantes
+    const pagosSnap = await db
+      .collection("pagos")
+      .where("tipoPago", "==", "empadronamiento")
+      .where("status", "==", "approved")
+      .get();
+
+    // 🔹 3. map userId -> última fecha de pago
+    const pagosMap = {};
+
+    pagosSnap.docs.forEach(doc => {
+      const data = doc.data();
+      const userId = data.metadata?.user_id;
+      const fecha = data.fechaAprobacionMP;
+
+      if (!userId || !fecha) return;
+
+      if (
+        !pagosMap[userId] ||
+        fecha.toMillis() > pagosMap[userId].toMillis()
+      ) {
+        pagosMap[userId] = fecha;
+      }
+    });
+
+    // 🔹 4. armar respuesta
+    const players = playersSnap.docs.map(doc => {
+      const playerData = doc.data();
+      const jugadorId = doc.id;
+
+      const fecha = pagosMap[jugadorId];
+
+      return {
+        id: jugadorId,
+        ...serializeTimestamps(playerData),
+        fechaHabilitacion: fecha
+        ? new Date(fecha).toISOString()
+        : null
+      };
+    });
 
     res.json(players);
   } catch (err) {
-    console.error(err);
+    console.error("❌ ERROR getAllPlayersAsambal:", err);
     res.status(500).json({ message: err.message });
   }
 };
