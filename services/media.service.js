@@ -3,12 +3,13 @@ const { bucket } = require("../config/firebase");
 const uploadPublicImage = async ({
   path,
   buffer,
+  contentType,
   cacheControl = "public, max-age=31536000",
 }) => {
   const file = bucket.file(path);
 
   await file.save(buffer, {
-    contentType: "image/webp",
+    contentType,
     public: true,
     metadata: { cacheControl },
   });
