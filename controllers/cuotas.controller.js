@@ -1,4 +1,7 @@
 const { db, admin } = require("../config/firebase");
+const { uploadPublicImage } = require("../services/media.service");
+const { convertToWebp } = require("../services/image.service");
+
 
 const crearCuota = async (req, res) => {
   const { preview } = req.body;
@@ -248,7 +251,7 @@ const getCuotas = async (req, res) => {
         if (!statsMap[id]) {
           statsMap[id] = {
           total: 0,
-          pagados: 0,
+          acreditados: 0,
           pendientes: 0,
           adeudados: 0,
           vencidos: 0,
@@ -258,8 +261,8 @@ const getCuotas = async (req, res) => {
       statsMap[id].total++;
 
       switch (data.estado) {
-  case "PAGADO":
-    statsMap[id].pagados++;
+  case "ACREDITADO":
+    statsMap[id].acreditados++;
     break;
   case "PENDIENTE":
     statsMap[id].pendientes++;
@@ -282,7 +285,7 @@ const getCuotas = async (req, res) => {
         id: doc.id,
         ...data,
         totalJugadores: stats.total,
-        totalPagados: stats.pagados,
+        totalAcreditados: stats.acreditados,
         totalPendientes: stats.pendientes,
         totalAdeudados: stats.adeudados + stats.vencidos,
       };
@@ -349,6 +352,7 @@ const getCuotaDetalle = async (req, res) => {
         categoriaNombre: data.categoriaNombre || "-",
         estado: data.estado,
         fechaVencimiento: data.fechaVencimientoActual || null,
+        comprobanteUrl: data.comprobanteUrl || null,
       };
     });
 
@@ -443,8 +447,9 @@ const getCuotasJugador = async (req, res) => {
     }
 
     const snapshot = await db
+      .collection("jugadores")
+      .doc(jugadorId)
       .collection("cuotasJugador")
-      .where("jugadorId", "==", jugadorId)
       .orderBy("anio", "desc")
       .orderBy("mes", "desc")
       .get();
@@ -463,10 +468,95 @@ const getCuotasJugador = async (req, res) => {
   }
 };
 
+const uploadComprobante = async (req, res) => {
+  try {
+    const { cuotaId, jugadorId } = req.params;
+
+    if (!req.file) {
+      return res.status(400).json({ message: "Archivo requerido" });
+    }
+
+    const webpBuffer = await convertToWebp({
+      buffer: req.file.buffer,
+      width: 1200,
+      quality: 80,
+    });
+
+    const path = `comprobantes/${jugadorId}/${cuotaId}-${Date.now()}.webp`;
+
+    const url = await uploadPublicImage({
+      path,
+      buffer: webpBuffer,
+      contentType: "image/webp",
+    });
+
+    const cuotaRef = db
+      .collection("jugadores")
+      .doc(jugadorId)
+      .collection("cuotasJugador")
+      .doc(cuotaId);
+
+    await cuotaRef.update({
+      comprobanteUrl: url,
+      estado: "PENDIENTE",
+      updatedAt: new Date(),
+    });
+
+    return res.status(200).json({
+      message: "Comprobante subido correctamente",
+      url,
+    });
+  } catch (error) {
+    console.error("Error uploadComprobante:", error);
+    return res.status(500).json({
+      message: "Error subiendo comprobante",
+    });
+  }
+};
+
+const validarPago = async (req, res) => {
+  const { cuotaId, jugadorId } = req.params;
+
+  const cuotaRef = db
+    .collection("jugadores")
+    .doc(jugadorId)
+    .collection("cuotasJugador")
+    .doc(cuotaId);
+
+  await cuotaRef.update({
+    estado: "ACREDITADO",
+    fechaPagoValidado: new Date(),
+  });
+
+  res.json({ ok: true });
+};
+
+const rechazarPago = async (req, res) => {
+  const { cuotaId, jugadorId } = req.params;
+  const {motivo} = req.body;
+
+  const cuotaRef = db
+    .collection("jugadores")
+    .doc(jugadorId)
+    .collection("cuotasJugador")
+    .doc(cuotaId);
+
+  await cuotaRef.update({
+    estado: "RECHAZADO",
+    motivoRechazo: motivo,
+    comprobanteUrl: null,
+  });
+
+  res.json({ ok: true });
+};
+
 module.exports = { 
     crearCuota,
     getCuotas,
     getCuotaDetalle,
     aplicarProrroga,
     getCuotasJugador,
+    uploadComprobante,
+    validarPago,
+    rechazarPago,
  };
