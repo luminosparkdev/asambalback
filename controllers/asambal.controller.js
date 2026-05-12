@@ -192,9 +192,10 @@ const getAllPlayersAsambal = async (req, res) => {
     pagosSnap.docs.forEach(doc => {
       const data = doc.data();
       const userId = data.metadata?.user_id;
+      const cuotaNumero = data.metadata?.cuota_numero;
       const fecha = data.fechaAprobacionMP;
 
-      if (!userId || !fecha) return;
+      if (!userId || !fecha || cuotaNumero !== 1) return;
 
       if (
         !pagosMap[userId] ||
